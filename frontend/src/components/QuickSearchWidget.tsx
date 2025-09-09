@@ -30,12 +30,12 @@ export default function QuickSearchWidget({ onSearch, onOpenChat }: QuickSearchW
   };
 
   const popularSearches = [
-    "Weekend in Paris",
-    "Bali honeymoon next month",
-    "Business trip to Singapore",
-    "Family vacation to Orlando",
-    "Cheap flights to Bangkok",
-    "Tokyo cherry blossom season",
+    "Cheap flights to Bali from Sydney",
+    "Gold Coast family holiday",
+    "New Zealand ski trip in July",
+    "Singapore weekend getaway",
+    "Japan cherry blossoms from Melbourne",
+    "Fiji honeymoon package",
   ];
 
   const handlePopularSearch = (search: string) => {

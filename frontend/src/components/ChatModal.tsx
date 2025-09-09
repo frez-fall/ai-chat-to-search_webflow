@@ -9,7 +9,6 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Send, Plane, MapPin, Calendar, Users, Loader2 } from 'lucide-react';
 import MessageList from './MessageList';
 import MessageInput from './MessageInput';
-import SearchStatus from './SearchStatus';
 import { useChat } from '../hooks/useChat';
 import { useFlightSearch } from '../hooks/useFlightSearch';
 import type { Message } from '../types/chat';
@@ -232,13 +231,6 @@ export default function ChatModal({
             <X className="w-5 h-5 text-gray-500" />
           </button>
         </div>
-
-        {/* Search Status */}
-        {searchParams && (
-          <div className="px-6 py-3 bg-gray-50 border-b">
-            <SearchStatus parameters={searchParams} />
-          </div>
-        )}
 
         {/* Messages */}
         <div className="flex-1 overflow-y-auto px-6 py-4">
