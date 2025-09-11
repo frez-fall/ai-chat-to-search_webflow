@@ -28,12 +28,8 @@ export default function Home() {
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-20 pb-16">
           <div className="text-center mb-12">
             <h1 className="text-5xl font-bold text-gray-900 mb-4">
-              Find Your Perfect Flight
+              Where do you want to go?
             </h1>
-            <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-              Use natural language to search for flights. Just tell us where you want to go, 
-              and our AI will handle the rest.
-            </p>
           </div>
 
           {/* Search Widget */}

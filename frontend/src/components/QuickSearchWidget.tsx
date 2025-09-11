@@ -113,12 +113,6 @@ export default function QuickSearchWidget({ onSearch }: QuickSearchWidgetProps) 
         <div className="space-y-6">
           {/* AI Search */}
           <div className="text-center mb-4">
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">
-              Where do you want to go?
-            </h2>
-            <p className="text-gray-600">
-              Tell me your travel plans in your own words
-            </p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
