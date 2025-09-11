@@ -6,47 +6,79 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Search, MapPin, Calendar, Users, ArrowRight, Sparkles } from 'lucide-react';
+import { MapPin, ArrowRight, Mountain, Snowflake, Building, Wine, ChevronDown, ChevronUp } from 'lucide-react';
+// import { Search, Calendar, Users, Sparkles } from 'lucide-react'; // For traditional search - hidden for now
 
 interface QuickSearchWidgetProps {
   onSearch: (query: string) => void;
-  onOpenChat: () => void;
 }
 
-export default function QuickSearchWidget({ onSearch, onOpenChat }: QuickSearchWidgetProps) {
+export default function QuickSearchWidget({ onSearch }: QuickSearchWidgetProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState<'ai' | 'traditional'>('ai');
+  // const [activeTab, setActiveTab] = useState<'ai' | 'traditional'>('ai');
+  const [showDestinationToggles, setShowDestinationToggles] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (searchQuery.trim()) {
-      if (activeTab === 'ai') {
-        onSearch(searchQuery);
-      } else {
-        // Traditional search would go to existing booking system
-        window.location.href = `/search?q=${encodeURIComponent(searchQuery)}`;
-      }
+      onSearch(searchQuery);
+      // if (activeTab === 'ai') {
+      //   onSearch(searchQuery);
+      // } else {
+      //   // Traditional search would go to existing booking system
+      //   window.location.href = `/search?q=${encodeURIComponent(searchQuery)}`;
+      // }
     }
   };
 
-  const popularSearches = [
-    "Cheap flights to Bali from Sydney",
-    "Gold Coast family holiday",
-    "New Zealand ski trip in July",
-    "Singapore weekend getaway",
-    "Japan cherry blossoms from Melbourne",
-    "Fiji honeymoon package",
+  const destinationCategories = [
+    {
+      id: 'all',
+      label: 'All Destinations',
+      icon: MapPin,
+      prompt: "I'm open to any destination! Can you help me explore different options based on my preferences and travel dates?"
+    },
+    {
+      id: 'island',
+      label: 'Island Vibes',
+      icon: MapPin,
+      prompt: "I'm looking for tropical island destinations with beautiful beaches and crystal clear waters. Can you help me find the perfect island getaway?"
+    },
+    {
+      id: 'mountain',
+      label: 'Mountain Views',
+      icon: Mountain,
+      prompt: "I want to explore mountain destinations with stunning views and outdoor activities. What mountain destinations would you recommend?"
+    },
+    {
+      id: 'snow',
+      label: 'Snowy Adventures',
+      icon: Snowflake,
+      prompt: "I'm interested in snowy destinations for skiing, snowboarding, or winter activities. Can you suggest some great winter destinations?"
+    },
+    {
+      id: 'city',
+      label: 'City Escapes',
+      icon: Building,
+      prompt: "I'm interested in vibrant city destinations with culture, nightlife, and urban experiences. Can you suggest some exciting city breaks?"
+    },
+    {
+      id: 'wine',
+      label: 'Wine Tours',
+      icon: Wine,
+      prompt: "I'd love to visit wine regions with vineyard tours and tastings. What are the best wine destinations you'd recommend?"
+    }
   ];
 
-  const handlePopularSearch = (search: string) => {
-    setSearchQuery(search);
-    onSearch(search);
+  const handleDestinationToggle = (prompt: string) => {
+    onSearch(prompt);
+    setShowDestinationToggles(false);
   };
 
   return (
     <div className="bg-white rounded-2xl shadow-xl p-6 max-w-4xl mx-auto">
-      {/* Tab switcher */}
-      <div className="flex items-center justify-center mb-6">
+      {/* Tab switcher - hidden for now */}
+      {/* <div className="flex items-center justify-center mb-6">
         <div className="bg-gray-100 rounded-lg p-1 inline-flex">
           <button
             onClick={() => setActiveTab('ai')}
@@ -75,9 +107,9 @@ export default function QuickSearchWidget({ onSearch, onOpenChat }: QuickSearchW
             </span>
           </button>
         </div>
-      </div>
+      </div> */}
 
-      {activeTab === 'ai' ? (
+      {/* {activeTab === 'ai' ? ( */}
         <div className="space-y-6">
           {/* AI Search */}
           <div className="text-center mb-4">
@@ -96,7 +128,7 @@ export default function QuickSearchWidget({ onSearch, onOpenChat }: QuickSearchW
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Try: 'Beach vacation in July for 2 weeks' or 'Cheapest flights to Europe'"
-                className="w-full px-6 py-4 pr-12 text-lg border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-6 py-4 pr-12 text-lg border border-gray-200 text-black rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
               <button
                 type="submit"
@@ -106,54 +138,54 @@ export default function QuickSearchWidget({ onSearch, onOpenChat }: QuickSearchW
               </button>
             </div>
 
-            {/* AI Features */}
-            <div className="flex items-center justify-center space-x-6 text-sm text-gray-500">
-              <span className="flex items-center space-x-1">
-                <Sparkles className="w-4 h-4 text-yellow-500" />
-                <span>Natural language</span>
-              </span>
-              <span className="flex items-center space-x-1">
-                <Search className="w-4 h-4 text-blue-500" />
-                <span>Smart suggestions</span>
-              </span>
-              <span className="flex items-center space-x-1">
-                <Calendar className="w-4 h-4 text-green-500" />
-                <span>Flexible dates</span>
-              </span>
+            {/* Destination Help Toggle */}
+            <div className="text-center mt-4">
+              <button
+                type="button"
+                onClick={() => setShowDestinationToggles(!showDestinationToggles)}
+                className="inline-flex items-center space-x-2 text-gray-600 hover:text-gray-900 transition-colors"
+              >
+                <span className="underline">Not sure? Let us help you figure it out</span>
+                {showDestinationToggles ? (
+                  <ChevronUp className="w-4 h-4" />
+                ) : (
+                  <ChevronDown className="w-4 h-4" />
+                )}
+              </button>
             </div>
+
+            {/* Destination Category Toggles */}
+            {showDestinationToggles && (
+              <div className="mt-4 p-4 bg-gray-50 rounded-xl">
+                <p className="text-sm text-gray-600 mb-3 text-center">Choose a travel theme to get started:</p>
+                <div className="flex flex-wrap gap-2 justify-center">
+                  {destinationCategories.map((category) => {
+                    const IconComponent = category.icon;
+                    return (
+                      <button
+                        key={category.id}
+                        onClick={() => handleDestinationToggle(category.prompt)}
+                        className={`
+                          px-4 py-2 rounded-full border transition-all
+                          ${category.id === 'all' 
+                            ? 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700' 
+                            : 'bg-white text-gray-700 border-gray-300 hover:border-blue-500 hover:text-blue-600'}
+                        `}
+                      >
+                        <span className="flex items-center space-x-2">
+                          <IconComponent className="w-4 h-4" />
+                          <span>{category.label}</span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </form>
-
-          {/* Popular searches */}
-          <div className="space-y-3">
-            <p className="text-sm font-medium text-gray-700">Popular searches:</p>
-            <div className="flex flex-wrap gap-2">
-              {popularSearches.map((search, index) => (
-                <button
-                  key={index}
-                  onClick={() => handlePopularSearch(search)}
-                  className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-full text-sm hover:bg-gray-200 transition-colors"
-                >
-                  {search}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Chat option */}
-          <div className="text-center pt-4 border-t">
-            <button
-              onClick={onOpenChat}
-              className="inline-flex items-center space-x-2 text-blue-600 hover:text-blue-700 font-medium"
-            >
-              <Sparkles className="w-5 h-5" />
-              <span>Or have a conversation with our AI assistant</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
-          </div>
         </div>
-      ) : (
+      {/* ) : (
         <div className="space-y-6">
-          {/* Traditional Search */}
           <div className="text-center mb-4">
             <h2 className="text-2xl font-bold text-gray-900 mb-2">
               Search Flights
@@ -164,7 +196,6 @@ export default function QuickSearchWidget({ onSearch, onOpenChat }: QuickSearchW
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* From */}
             <div className="space-y-2">
               <label className="text-sm font-medium text-gray-700">From</label>
               <div className="relative">
@@ -177,7 +208,6 @@ export default function QuickSearchWidget({ onSearch, onOpenChat }: QuickSearchW
               </div>
             </div>
 
-            {/* To */}
             <div className="space-y-2">
               <label className="text-sm font-medium text-gray-700">To</label>
               <div className="relative">
@@ -190,7 +220,6 @@ export default function QuickSearchWidget({ onSearch, onOpenChat }: QuickSearchW
               </div>
             </div>
 
-            {/* Dates */}
             <div className="space-y-2">
               <label className="text-sm font-medium text-gray-700">Dates</label>
               <div className="relative">
@@ -203,7 +232,6 @@ export default function QuickSearchWidget({ onSearch, onOpenChat }: QuickSearchW
               </div>
             </div>
 
-            {/* Passengers */}
             <div className="space-y-2">
               <label className="text-sm font-medium text-gray-700">Passengers</label>
               <div className="relative">
@@ -228,7 +256,6 @@ export default function QuickSearchWidget({ onSearch, onOpenChat }: QuickSearchW
             </button>
           </div>
 
-          {/* Switch to AI */}
           <div className="text-center pt-4 border-t">
             <button
               onClick={() => setActiveTab('ai')}
@@ -240,7 +267,7 @@ export default function QuickSearchWidget({ onSearch, onOpenChat }: QuickSearchW
             </button>
           </div>
         </div>
-      )}
+      )} */}
     </div>
   );
 }

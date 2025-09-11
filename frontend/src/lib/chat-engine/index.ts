@@ -50,7 +50,7 @@ export interface ChatEngineConfig {
 }
 
 const DEFAULT_CONFIG: ChatEngineConfig = {
-  model: 'gpt-4o',
+  model: 'gpt-4o-mini',
   temperature: 0.7,
   maxTokens: 1000,
 };

@@ -73,20 +73,6 @@ export default function MessageInput({
 
   return (
     <div className="space-y-3">
-      {/* Suggestions */}
-      {showSuggestions && activeSuggestions.length > 0 && message.length === 0 && (
-        <div className="flex flex-wrap gap-2">
-          {activeSuggestions.slice(0, 4).map((suggestion, index) => (
-            <button
-              key={index}
-              onClick={() => handleSuggestionClick(suggestion)}
-              className="text-xs px-3 py-1.5 bg-blue-50 text-blue-700 rounded-full hover:bg-blue-100 transition-colors"
-            >
-              {suggestion}
-            </button>
-          ))}
-        </div>
-      )}
 
       {/* Input container */}
       <div className="relative flex items-end space-x-2">
@@ -99,7 +85,7 @@ export default function MessageInput({
             placeholder={placeholder}
             disabled={isLoading}
             rows={1}
-            className="w-full px-4 py-3 pr-12 bg-gray-50 border border-gray-200 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full px-4 py-3 pr-12 bg-gray-50 border border-gray-200 text-black rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ minHeight: '48px', maxHeight: '120px' }}
           />
           

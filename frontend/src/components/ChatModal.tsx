@@ -54,8 +54,18 @@ export default function ChatModal({
 
   // Handle initial query
   useEffect(() => {
-    if (conversationId && initialQuery && messages.length === 1) {
-      handleSendMessage(initialQuery);
+    if (conversationId && initialQuery && messages.length === 0) {
+      // Add user message immediately
+      const userMessage: Message = {
+        id: `user-init-${Date.now()}`,
+        role: 'user',
+        content: initialQuery,
+        timestamp: new Date().toISOString(),
+      };
+      setMessages([userMessage]);
+      
+      // Then process the AI response
+      handleInitialQuery(initialQuery);
     }
   }, [conversationId, initialQuery]);
 
@@ -65,22 +75,13 @@ export default function ChatModal({
       const response = await createConversation(initialQuery);
       setConversationId(response.conversation_id);
       
-      // Add initial assistant message
-      setMessages([{
-        id: '1',
-        role: 'assistant',
-        content: response.initial_message,
-        timestamp: new Date().toISOString(),
-      }]);
-      
-      // If there's an AI response from initial query
-      if (response.ai_response) {
-        setMessages(prev => [...prev, {
-          id: '2',
+      // Only add initial greeting if there's no initial query
+      if (!initialQuery) {
+        setMessages([{
+          id: '1',
           role: 'assistant',
-          content: response.ai_response.content,
+          content: response.initial_message,
           timestamp: new Date().toISOString(),
-          metadata: response.ai_response.extracted_params,
         }]);
       }
     } catch (error) {
@@ -93,6 +94,58 @@ export default function ChatModal({
       }]);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleInitialQuery = async (query: string) => {
+    if (!conversationId) return;
+    
+    setIsLoading(true);
+    setIsTyping(true);
+
+    try {
+      const response = await sendMessage(conversationId, query);
+      
+      // Add assistant message
+      const assistantMessage: Message = {
+        id: `assistant-${Date.now()}`,
+        role: 'assistant',
+        content: response.ai_response.content,
+        timestamp: new Date().toISOString(),
+        metadata: response.ai_response.extracted_params,
+      };
+      setMessages(prev => [...prev, assistantMessage]);
+      
+      // Update search parameters
+      if (response.search_parameters) {
+        setSearchParams(response.search_parameters);
+      }
+      
+      // Handle generated URL
+      if (response.generated_url) {
+        setBookingUrl(response.generated_url);
+        onBookingUrlGenerated?.(response.generated_url);
+        
+        // Add success message
+        setMessages(prev => [...prev, {
+          id: `success-${Date.now()}`,
+          role: 'system',
+          content: `Great! I've found flights for you. Click the button below to view and book your flights.`,
+          timestamp: new Date().toISOString(),
+          metadata: { url: response.generated_url },
+        }]);
+      }
+    } catch (error) {
+      console.error('Failed to process initial query:', error);
+      setMessages(prev => [...prev, {
+        id: `error-${Date.now()}`,
+        role: 'system',
+        content: 'Sorry, I encountered an error processing your request. Please try again.',
+        timestamp: new Date().toISOString(),
+      }]);
+    } finally {
+      setIsLoading(false);
+      setIsTyping(false);
     }
   };
 
