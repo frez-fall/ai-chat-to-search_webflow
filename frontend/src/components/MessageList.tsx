@@ -6,7 +6,7 @@
 'use client';
 
 import React from 'react';
-import { Bot, User, AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
+import { AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
 import type { Message } from '../types/chat';
 
 interface MessageListProps {
@@ -28,13 +28,25 @@ export default function MessageList({ messages, isTyping }: MessageListProps) {
       return (
         <div
           key={message.id}
-          className={`flex items-start space-x-3 py-3 px-4 rounded-lg ${
-            isError ? 'bg-red-50' : isSuccess ? 'bg-green-50' : 'bg-gray-50'
-          }`}
+          className="flex items-start space-x-3 py-3 px-4 rounded-lg"
+          style={{
+            backgroundColor: isError 
+              ? 'rgba(239, 68, 68, 0.1)' // error with opacity
+              : isSuccess 
+              ? 'var(--brand-primary-light)' 
+              : 'var(--brand-primary-light)'
+          }}
         >
-          <div className={`mt-1 ${
-            isError ? 'text-red-600' : isSuccess ? 'text-green-600' : 'text-gray-600'
-          }`}>
+          <div 
+            className="mt-1"
+            style={{
+              color: isError 
+                ? 'var(--brand-error)' 
+                : isSuccess 
+                ? '#171316' 
+                : '#6b7280'
+            }}
+          >
             {isError ? (
               <AlertCircle className="w-5 h-5" />
             ) : isSuccess ? (
@@ -44,9 +56,16 @@ export default function MessageList({ messages, isTyping }: MessageListProps) {
             )}
           </div>
           <div className="flex-1">
-            <p className={`text-sm ${
-              isError ? 'text-red-800' : isSuccess ? 'text-green-800' : 'text-gray-800'
-            }`}>
+            <p 
+              className="text-sm"
+              style={{
+                color: isError 
+                  ? 'var(--brand-error)' 
+                  : isSuccess 
+                  ? '#171316' 
+                  : '#171316'
+              }}
+            >
               {message.content}
             </p>
           </div>
@@ -57,90 +76,70 @@ export default function MessageList({ messages, isTyping }: MessageListProps) {
     return (
       <div
         key={message.id}
-        className={`flex items-start space-x-3 py-4 ${
-          isUser ? 'flex-row-reverse space-x-reverse' : ''
+        className={`flex py-4 ${
+          isUser ? 'justify-end' : 'justify-start'
         }`}
       >
-        {/* Avatar */}
-        <div className={`flex-shrink-0 ${isUser ? 'ml-3' : 'mr-3'}`}>
-          <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-            isUser ? 'bg-blue-600' : 'bg-gray-200'
-          }`}>
-            {isUser ? (
-              <User className="w-5 h-5 text-white" />
-            ) : (
-              <Bot className="w-5 h-5 text-gray-600" />
-            )}
-          </div>
-        </div>
-        
         {/* Message bubble */}
-        <div className={`flex-1 max-w-[80%] ${isUser ? 'flex justify-end' : ''}`}>
-          <div className={`rounded-2xl px-4 py-3 ${
-            isUser 
-              ? 'bg-blue-600 text-white' 
-              : 'bg-gray-100 text-gray-900'
-          }`}>
+        <div className={`max-w-[80%]`}>
+          <div 
+            className="rounded-2xl px-4 py-3"
+            style={{
+              backgroundColor: isUser ? 'var(--brand-primary)' : '#f5f5f5',
+              color: isUser ? 'var(--text-on-brand)' : '#171316'
+            }}
+          >
             <p className="text-sm whitespace-pre-wrap break-words">
               {message.content}
             </p>
             
             {/* Show extracted parameters for assistant messages */}
             {isAssistant && message.metadata && (
-              <div className="mt-3 pt-3 border-t border-gray-200">
-                <p className="text-xs font-medium mb-2 text-gray-600">
+              <div className="mt-3 pt-3 border-t" style={{ borderColor: 'var(--border-default)' }}>
+                <p className="text-xs font-medium mb-2" style={{ color: '#6b7280' }}>
                   Extracted information:
                 </p>
                 <div className="space-y-1">
                   {message.metadata.origin_code && (
-                    <div className="text-xs text-gray-500">
+                    <div className="text-xs" style={{ color: '#6b7280' }}>
                       From: {message.metadata.origin_name || message.metadata.origin_code}
                     </div>
                   )}
                   {message.metadata.destination_code && (
-                    <div className="text-xs text-gray-500">
+                    <div className="text-xs" style={{ color: '#6b7280' }}>
                       To: {message.metadata.destination_name || message.metadata.destination_code}
                     </div>
                   )}
                   {message.metadata.departure_date && (
-                    <div className="text-xs text-gray-500">
+                    <div className="text-xs" style={{ color: '#6b7280' }}>
                       Departure: {new Date(message.metadata.departure_date).toLocaleDateString()}
                     </div>
                   )}
                   {message.metadata.return_date && (
-                    <div className="text-xs text-gray-500">
+                    <div className="text-xs" style={{ color: '#6b7280' }}>
                       Return: {new Date(message.metadata.return_date).toLocaleDateString()}
+                    </div>
+                  )}
+                  {(message.metadata.adults !== undefined || 
+                    message.metadata.children !== undefined || 
+                    message.metadata.infants !== undefined) && (
+                    <div className="text-xs" style={{ color: '#6b7280' }}>
+                      Passengers: {
+                        [
+                          message.metadata.adults && `${message.metadata.adults} adult${message.metadata.adults > 1 ? 's' : ''}`,
+                          message.metadata.children > 0 && `${message.metadata.children} child${message.metadata.children > 1 ? 'ren' : ''}`,
+                          message.metadata.infants > 0 && `${message.metadata.infants} infant${message.metadata.infants > 1 ? 's' : ''}`
+                        ].filter(Boolean).join(', ') || 'Not specified yet'
+                      }
                     </div>
                   )}
                 </div>
               </div>
             )}
           </div>
-          
-          {/* Timestamp */}
-          <div className={`mt-1 text-xs text-gray-400 ${
-            isUser ? 'text-right' : 'text-left'
-          }`}>
-            {formatTimestamp(message.timestamp)}
-          </div>
         </div>
       </div>
     );
-  };
-  
-  const formatTimestamp = (timestamp: string) => {
-    const date = new Date(timestamp);
-    const now = new Date();
-    const diff = now.getTime() - date.getTime();
-    const minutes = Math.floor(diff / 60000);
-    
-    if (minutes < 1) return 'Just now';
-    if (minutes < 60) return `${minutes} min ago`;
-    
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
-    
-    return date.toLocaleDateString();
   };
   
   return (
@@ -149,16 +148,11 @@ export default function MessageList({ messages, isTyping }: MessageListProps) {
       
       {/* Typing indicator */}
       {isTyping && (
-        <div className="flex items-start space-x-3 py-4">
-          <div className="flex-shrink-0">
-            <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center">
-              <Bot className="w-5 h-5 text-gray-600" />
-            </div>
-          </div>
-          <div className="bg-gray-100 rounded-2xl px-4 py-3">
+        <div className="flex py-4">
+          <div className="rounded-2xl px-4 py-3" style={{ backgroundColor: '#f5f5f5' }}>
             <div className="flex items-center space-x-1">
-              <Loader2 className="w-4 h-4 text-gray-500 animate-spin" />
-              <span className="text-sm text-gray-500">Assistant is typing...</span>
+              <Loader2 className="w-4 h-4 animate-spin" style={{ color: '#6b7280' }} />
+              <span className="text-sm" style={{ color: '#6b7280' }}>Assistant is typing...</span>
             </div>
           </div>
         </div>

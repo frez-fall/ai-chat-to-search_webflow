@@ -6,7 +6,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { MapPin, ArrowRight, Mountain, Snowflake, Building, Wine, ChevronDown, ChevronUp } from 'lucide-react';
+import { MapPin, Mountain, Snowflake, Building, Wine, ChevronDown, ChevronUp } from 'lucide-react';
 // import { Search, Calendar, Users, Sparkles } from 'lucide-react'; // For traditional search - hidden for now
 
 interface QuickSearchWidgetProps {
@@ -15,19 +15,12 @@ interface QuickSearchWidgetProps {
 
 export default function QuickSearchWidget({ onSearch }: QuickSearchWidgetProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  // const [activeTab, setActiveTab] = useState<'ai' | 'traditional'>('ai');
   const [showDestinationToggles, setShowDestinationToggles] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (searchQuery.trim()) {
       onSearch(searchQuery);
-      // if (activeTab === 'ai') {
-      //   onSearch(searchQuery);
-      // } else {
-      //   // Traditional search would go to existing booking system
-      //   window.location.href = `/search?q=${encodeURIComponent(searchQuery)}`;
-      // }
     }
   };
 
@@ -71,12 +64,14 @@ export default function QuickSearchWidget({ onSearch }: QuickSearchWidgetProps) 
   ];
 
   const handleDestinationToggle = (prompt: string) => {
-    onSearch(prompt);
+    setSearchQuery(prompt);
     setShowDestinationToggles(false);
+    onSearch(prompt);
   };
 
+
   return (
-    <div className="bg-white rounded-2xl shadow-xl p-6 max-w-4xl mx-auto">
+    <div className="w-full max-w-2xl mx-auto">
       {/* Tab switcher - hidden for now */}
       {/* <div className="flex items-center justify-center mb-6">
         <div className="bg-gray-100 rounded-lg p-1 inline-flex">
@@ -121,54 +116,82 @@ export default function QuickSearchWidget({ onSearch }: QuickSearchWidgetProps) 
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Try: 'Beach vacation in July for 2 weeks' or 'Cheapest flights to Europe'"
-                className="w-full px-6 py-4 pr-12 text-lg border border-gray-200 text-black rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Anywhere in the world"
+                className="w-full px-6 py-4 pr-44 text-lg bg-white rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                style={{
+                  borderColor: 'var(--border-default)',
+                  color: 'var(--text-primary)'
+                }}
+                onFocus={(e) => {
+                  e.currentTarget.style.borderColor = 'var(--brand-primary)';
+                  e.currentTarget.style.boxShadow = '0 0 0 3px var(--brand-primary-light)';
+                }}
+                onBlur={(e) => {
+                  e.currentTarget.style.borderColor = 'var(--border-default)';
+                  e.currentTarget.style.boxShadow = 'none';
+                }}
               />
               <button
                 type="submit"
-                className="absolute right-2 top-1/2 transform -translate-y-1/2 bg-blue-600 text-white p-3 rounded-lg hover:bg-blue-700 transition-colors"
+                className="absolute right-2 top-1/2 transform -translate-y-1/2 px-6 py-2.5 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-medium transition-colors flex items-center space-x-1"
               >
-                <ArrowRight className="w-5 h-5" />
+                <span>Let's go</span>
+                <span>→</span>
               </button>
             </div>
 
             {/* Destination Help Toggle */}
-            <div className="text-center mt-4">
+            <div className="text-center mt-8">
               <button
                 type="button"
                 onClick={() => setShowDestinationToggles(!showDestinationToggles)}
-                className="inline-flex items-center space-x-2 text-gray-600 hover:text-gray-900 transition-colors"
+                className="text-gray-400 text-lg hover:text-gray-300 transition-colors inline-flex items-center space-x-2"
               >
-                <span className="underline">Not sure? Let us help you figure it out</span>
+                <span className="underline">Not sure where you wanna go? Let's help you figure it out!</span>
                 {showDestinationToggles ? (
-                  <ChevronUp className="w-4 h-4" />
+                  <ChevronUp className="w-5 h-5" />
                 ) : (
-                  <ChevronDown className="w-4 h-4" />
+                  <ChevronDown className="w-5 h-5" />
                 )}
               </button>
             </div>
 
             {/* Destination Category Toggles */}
             {showDestinationToggles && (
-              <div className="mt-4 p-4 bg-gray-50 rounded-xl">
-                <p className="text-sm text-gray-600 mb-3 text-center">Choose a travel theme to get started:</p>
-                <div className="flex flex-wrap gap-2 justify-center">
+              <div className="mt-6 p-6 bg-gray-900 bg-opacity-50 rounded-2xl backdrop-blur-sm">
+                <p className="text-sm text-gray-400 mb-4 text-center">Choose a travel theme to get started:</p>
+                <div className="flex flex-wrap gap-3 justify-center">
                   {destinationCategories.map((category) => {
                     const IconComponent = category.icon;
                     return (
                       <button
                         key={category.id}
+                        type="button"
                         onClick={() => handleDestinationToggle(category.prompt)}
-                        className={`
-                          px-4 py-2 rounded-full border transition-all
-                          ${category.id === 'all' 
-                            ? 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700' 
-                            : 'bg-white text-gray-700 border-gray-300 hover:border-blue-500 hover:text-blue-600'}
-                        `}
+                        className="px-4 py-2.5 rounded-full border transition-all hover:scale-105 transform"
+                        style={{
+                          backgroundColor: category.id === 'all' ? '#1156F9' : 'transparent',
+                          color: category.id === 'all' ? '#FFFFFF' : '#E5E7EB',
+                          borderColor: category.id === 'all' ? '#1156F9' : '#4B5563'
+                        }}
+                        onMouseEnter={(e) => {
+                          if (category.id !== 'all') {
+                            e.currentTarget.style.borderColor = '#1156F9';
+                            e.currentTarget.style.color = '#FFFFFF';
+                            e.currentTarget.style.backgroundColor = '#1156F920';
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (category.id !== 'all') {
+                            e.currentTarget.style.borderColor = '#4B5563';
+                            e.currentTarget.style.color = '#E5E7EB';
+                            e.currentTarget.style.backgroundColor = 'transparent';
+                          }
+                        }}
                       >
                         <span className="flex items-center space-x-2">
                           <IconComponent className="w-4 h-4" />
-                          <span>{category.label}</span>
+                          <span className="font-medium">{category.label}</span>
                         </span>
                       </button>
                     );
@@ -176,6 +199,7 @@ export default function QuickSearchWidget({ onSearch }: QuickSearchWidgetProps) 
                 </div>
               </div>
             )}
+
           </form>
         </div>
       {/* ) : (

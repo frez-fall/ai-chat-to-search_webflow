@@ -3,7 +3,6 @@
 import React, { useState } from 'react';
 import QuickSearchWidget from '@/components/QuickSearchWidget';
 import ChatModal from '@/components/ChatModal';
-import ChatTriggerButton from '@/components/ChatTriggerButton';
 
 export default function Home() {
   const [isChatOpen, setIsChatOpen] = useState(false);
@@ -21,23 +20,30 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white">
-      {/* Hero Section */}
-      <div className="relative overflow-hidden">
-        <div className="absolute inset-0 bg-blue-600 opacity-5"></div>
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-20 pb-16">
-          <div className="text-center mb-12">
-            <h1 className="text-5xl font-bold text-gray-900 mb-4">
-              Where do you want to go?
-            </h1>
-          </div>
-
+    <div 
+      className="min-h-screen flex flex-col items-center justify-center"
+      style={{
+        backgroundColor: '#171316'
+      }}
+    >
+      {/* Main Content */}
+      <div className="w-full max-w-3xl mx-auto px-4">
+        <div className="text-center mb-12">
+          <h1 
+            className="text-5xl mb-8"
+            style={{ 
+              color: '#FDFEFD',
+              fontFamily: 'var(--font-brand)',
+              fontWeight: 600
+            }}
+          >
+            Where do you want to go?
+          </h1>
+          
           {/* Search Widget */}
-          <div className="mb-16">
-            <QuickSearchWidget 
-              onSearch={handleSearch}
-            />
-          </div>
+          <QuickSearchWidget 
+            onSearch={handleSearch}
+          />
         </div>
       </div>
 
@@ -49,11 +55,6 @@ export default function Home() {
         onBookingUrlGenerated={handleBookingUrlGenerated}
       />
 
-      {/* Chat Trigger Button */}
-      <ChatTriggerButton onClick={() => {
-        setInitialQuery('');
-        setIsChatOpen(true);
-      }} />
     </div>
   );
 }

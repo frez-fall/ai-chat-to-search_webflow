@@ -27,7 +27,11 @@ export function useChat() {
     });
 
     if (!response.ok) {
-      throw new Error('Failed to send message');
+      const errorData = await response.json().catch(() => ({}));
+      const error = new Error(errorData.error || 'Failed to send message');
+      (error as any).status = response.status;
+      (error as any).details = errorData;
+      throw error;
     }
 
     return response.json();
