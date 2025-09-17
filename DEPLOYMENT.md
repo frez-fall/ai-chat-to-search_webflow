@@ -2,6 +2,37 @@
 
 This guide covers deploying the AI Flight Search system to production environments.
 
+## ✅ Current Deployment Status
+
+**Live Application**: https://frontend-5bhr9o1el-rahul-paylatertravs-projects.vercel.app
+
+**Vercel Dashboard**: https://vercel.com/rahul-paylatertravs-projects/frontend
+
+## 🔐 CRITICAL SECURITY ALERT
+
+Your API keys have been exposed in the codebase and MUST be regenerated immediately:
+
+1. **Regenerate OpenAI API Key**
+   - Go to: https://platform.openai.com/api-keys
+   - Delete the exposed key starting with: `sk-proj-Sh2C08Al...`
+   - Create a new key
+
+2. **Regenerate Supabase Keys**
+   - Go to: https://app.supabase.com
+   - Navigate to Settings → API
+   - Regenerate both anon and service role keys
+
+## 📝 Required Environment Variables
+
+Add these in Vercel Dashboard: https://vercel.com/rahul-paylatertravs-projects/frontend/settings/environment-variables
+
+| Variable | Description | Where to Find |
+|----------|-------------|---------------|
+| `OPENAI_API_KEY` | OpenAI API key for GPT-4 | https://platform.openai.com/api-keys |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL | Supabase Dashboard → Settings → API |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anonymous key | Supabase Dashboard → Settings → API |
+| `SUPABASE_SERVICE_KEY` | Supabase service role key | Supabase Dashboard → Settings → API |
+
 ## 🚀 Quick Deploy to GitHub
 
 ### 1. Create GitHub Repository

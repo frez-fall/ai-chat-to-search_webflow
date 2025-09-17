@@ -6,12 +6,12 @@ import "./globals.css";
 const brandFont = localFont({
   src: [
     {
-      path: "../../public/fonts/roobert-font-regular.woff2",
+      path: "./fonts/roobert-font-regular.woff2",
       weight: "400",
       style: "normal",
     },
     {
-      path: "../../public/fonts/roobert-font-semibold.woff2",
+      path: "./fonts/roobert-font-semibold.woff2",
       weight: "600",
       style: "normal",
     },

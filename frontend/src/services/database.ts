@@ -124,11 +124,12 @@ class DatabaseService {
   private supabase: SupabaseClient<Database>;
 
   constructor() {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_SERVICE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
+    const supabaseKey = process.env.SUPABASE_SERVICE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-key';
 
-    if (!supabaseUrl || !supabaseKey) {
-      throw new Error('Missing Supabase configuration. Please set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_KEY environment variables.');
+    // During build time, we allow placeholder values
+    if (typeof window !== 'undefined' && (!process.env.NEXT_PUBLIC_SUPABASE_URL || !supabaseKey)) {
+      console.error('Missing Supabase configuration. Please set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_KEY environment variables.');
     }
 
     this.supabase = createClient<Database>(supabaseUrl, supabaseKey);
