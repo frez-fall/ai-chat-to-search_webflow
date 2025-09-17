@@ -3,8 +3,13 @@
  * Core AI conversation logic with OpenAI integration
  */
 
-import { openai } from '@ai-sdk/openai';
+import { createOpenAI } from '@ai-sdk/openai';
 import { generateText, streamText, tool } from 'ai';
+
+// Create OpenAI instance with explicit API key configuration
+const openai = createOpenAI({
+  apiKey: process.env.OPENAI_API_KEY || '',
+});
 import { z } from 'zod';
 import type { Message } from '@/models/message';
 import type { SearchParameters, UpdateSearchParametersInput } from '@/models/search-parameters';

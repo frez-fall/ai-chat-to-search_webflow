@@ -3,9 +3,14 @@
  * OpenAI-powered IATA code conversion and natural language processing
  */
 
-import { openai } from '@ai-sdk/openai';
+import { createOpenAI } from '@ai-sdk/openai';
 import { generateObject } from 'ai';
 import { z } from 'zod';
+
+// Create OpenAI instance with explicit API key configuration
+const openai = createOpenAI({
+  apiKey: process.env.OPENAI_API_KEY || '',
+});
 
 // IATA code validation schema - allow empty strings for partial extraction
 const IATACodeSchema = z.string().regex(/^([A-Z]{3}|)$/, 'Must be a 3-letter IATA code or empty');
