@@ -8,8 +8,11 @@
     "src/app/api/chat/stream/route.ts": {
       "maxDuration": 30
     },
+    "src/app/api/conversations/route.ts": {
+      "maxDuration": 30
+    },
     "src/app/api/conversations/*/messages/route.ts": {
-      "maxDuration": 10
+      "maxDuration": 30
     }
   },
   "headers": [
