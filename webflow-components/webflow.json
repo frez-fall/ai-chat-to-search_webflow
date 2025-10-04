@@ -1,0 +1,17 @@
+{
+  "library": {
+    "components": [
+      "**/*.webflow.@(js|jsx|mjs|ts|tsx)"
+    ],
+    "id": "ai-chat-to-search",
+    "name": "AI Chat to Search",
+    "description": "Conversational flight search UI that calls your backend"
+  },
+  "telemetry": {
+    "global": {
+      "allowTelemetry": true,
+      "lastPrompted": 1759574009380,
+      "version": "1.8.44"
+    }
+  }
+}
