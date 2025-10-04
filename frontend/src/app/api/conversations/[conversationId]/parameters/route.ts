@@ -1,126 +1,157 @@
 /**
  * Search Parameters API Endpoints
- * GET /api/conversations/:conversationId/parameters - Get search parameters
- * PUT /api/conversations/:conversationId/parameters - Update search parameters
+ * GET /api/conversations/:conversationId/parameters
+ * PUT /api/conversations/:conversationId/parameters
  */
 
-import { NextRequest, NextResponse } from 'next/server';
-import { z } from 'zod';
-import { db } from '@/services/database';
-import { UpdateSearchParametersSchema } from '@/models/search-parameters';
-import { urlGenerator } from '@/lib/url-generator';
+import { z } from "zod";
+import { db } from "@/services/database";
+import {
+  UpdateSearchParametersSchema,
+  type SearchParameters,
+  type UpdateSearchParametersInput,
+} from "@/models/search-parameters";
+import { urlGenerator } from "@/lib/url-generator";
+import { withCors, preflight } from "@/lib/cors";
 
-interface Params {
-  params: {
-    conversationId: string;
-  };
+// For strong typing of incoming multi-city segments in the PUT body
+type IncomingSegment = {
+  origin_code: string;
+  origin_name: string;
+  destination_code: string;
+  destination_name: string;
+  departure_date: string;
+};
+
+function computeIsComplete(p: SearchParameters | null | undefined): boolean {
+  if (!p) return false;
+
+  const hasBasic =
+    Boolean(p.origin_code) && Boolean(p.destination_code) && Boolean(p.departure_date);
+
+  if (p.trip_type === "oneway") return hasBasic;
+  if (p.trip_type === "return") return hasBasic && Boolean(p.return_date);
+  if (p.trip_type === "multicity") {
+    const count =
+      Array.isArray(p.multi_city_segments) ? p.multi_city_segments.length : 0;
+    return hasBasic && count >= 2;
+  }
+
+  // Default fallback
+  return hasBasic;
 }
 
-export async function GET(request: NextRequest, { params }: Params) {
+export async function GET(
+  request: Request,
+  { params }: { params: { conversationId: string } }
+) {
   try {
-    const { conversationId } = await params;
-    
-    // Check if conversation exists
+    const { conversationId } = params;
+
+    // Check conversation
     const conversation = await db.getConversation(conversationId);
     if (!conversation) {
-      return NextResponse.json(
-        { error: 'Conversation not found' },
-        { status: 404 }
-      );
+      return withCors({ error: "Conversation not found" }, request, 404);
     }
-    
-    // Get search parameters
+
+    // Get current parameters
     const searchParams = await db.getSearchParameters(conversationId);
     if (!searchParams) {
-      return NextResponse.json(
-        { error: 'Search parameters not found' },
-        { status: 404 }
-      );
+      return withCors({ error: "Search parameters not found" }, request, 404);
     }
-    
-    // Generate URL if parameters are complete
-    let bookingUrl;
-    if (searchParams.is_complete) {
-      bookingUrl = urlGenerator.generateBookingURL(searchParams, {
-        utm_source: 'chat',
-        utm_medium: 'ai',
-        utm_campaign: 'natural_language_search',
-      });
-    }
-    
-    return NextResponse.json({
-      conversation_id: conversationId,
-      parameters: searchParams,
-      booking_url: bookingUrl,
-      shareable_url: searchParams.is_complete 
-        ? urlGenerator.generateShareableURL(searchParams)
-        : undefined,
-    });
-    
-  } catch (error) {
-    console.error('Error getting search parameters:', error);
-    
-    return NextResponse.json(
+
+    // Precompute URLs if complete
+    const isComplete = Boolean(searchParams.is_complete);
+    const booking_url = isComplete
+      ? urlGenerator.generateBookingURL(searchParams, {
+          utm_source: "chat",
+          utm_medium: "ai",
+          utm_campaign: "natural_language_search",
+        })
+      : undefined;
+
+    const shareable_url =
+      isComplete ? urlGenerator.generateShareableURL(searchParams) : undefined;
+
+    return withCors(
       {
-        error: 'Internal server error',
-        message: error instanceof Error ? error.message : 'Unknown error',
+        conversation_id: conversationId,
+        parameters: searchParams,
+        booking_url,
+        shareable_url,
       },
-      { status: 500 }
+      request
+    );
+  } catch (error) {
+    return withCors(
+      {
+        error: "Internal server error",
+        message: error instanceof Error ? error.message : "Unknown error",
+      },
+      request,
+      500
     );
   }
 }
 
-export async function PUT(request: NextRequest, { params }: Params) {
+export async function PUT(
+  request: Request,
+  { params }: { params: { conversationId: string } }
+) {
   try {
-    const { conversationId } = await params;
-    const body = await request.json();
-    
-    // Validate request
-    const validatedBody = UpdateSearchParametersSchema.parse(body);
-    
-    // Check if conversation exists
+    const { conversationId } = params;
+
+    // Validate input body
+    const raw = (await request.json()) as unknown;
+    const validatedBody: UpdateSearchParametersInput =
+      UpdateSearchParametersSchema.parse(raw);
+
+    // Check conversation
     const conversation = await db.getConversation(conversationId);
     if (!conversation) {
-      return NextResponse.json(
-        { error: 'Conversation not found' },
-        { status: 404 }
+      return withCors({ error: "Conversation not found" }, request, 404);
+    }
+    if (conversation.status !== "active") {
+      return withCors(
+        { error: "Conversation is no longer active" },
+        request,
+        400
       );
     }
-    
-    // Check if conversation is still active
-    if (conversation.status !== 'active') {
-      return NextResponse.json(
-        { error: 'Conversation is no longer active' },
-        { status: 400 }
-      );
-    }
-    
-    // Get existing parameters
+
+    // Ensure existing params
     const existingParams = await db.getSearchParameters(conversationId);
     if (!existingParams) {
-      return NextResponse.json(
-        { error: 'Search parameters not found' },
-        { status: 404 }
-      );
+      return withCors({ error: "Search parameters not found" }, request, 404);
     }
-    
-    // Update parameters
-    const updatedParams = await db.updateSearchParameters(conversationId, validatedBody);
-    
-    // Handle multi-city segments if provided
-    if (validatedBody.trip_type === 'multicity' && body.multi_city_segments) {
-      // Delete existing segments
+
+    // Update base parameters
+    const updatedParams = await db.updateSearchParameters(
+      conversationId,
+      validatedBody
+    );
+
+    // Handle multi-city segments if explicitly provided for multicity
+    if (
+      validatedBody.trip_type === "multicity" &&
+      Array.isArray((validatedBody as any).multi_city_segments)
+    ) {
+      if (!updatedParams.id) {
+        return withCors(
+          { error: "Updated search parameters do not have an id" },
+          request,
+          500
+        );
+      }
+
+      const incoming: IncomingSegment[] = (validatedBody as any)
+        .multi_city_segments;
+
+      // Replace segments
       await db.deleteMultiCitySegments(updatedParams.id);
-      
-      // Create new segments
-      const segments = body.multi_city_segments.map((seg: {
-        origin_code: string;
-        origin_name: string;
-        destination_code: string;
-        destination_name: string;
-        departure_date: string;
-      }, index: number) => ({
-        search_params_id: updatedParams.id,
+
+      const segments = incoming.map((seg, index) => ({
+        search_params_id: updatedParams.id as string,
         sequence_order: index + 1,
         origin_code: seg.origin_code,
         origin_name: seg.origin_name,
@@ -128,75 +159,70 @@ export async function PUT(request: NextRequest, { params }: Params) {
         destination_name: seg.destination_name,
         departure_date: seg.departure_date,
       }));
-      
+
       await db.createMultiCitySegments(segments);
     }
-    
-    // Check if parameters are complete
-    const isComplete = !!(
-      updatedParams.origin_code &&
-      updatedParams.destination_code &&
-      updatedParams.departure_date &&
-      (updatedParams.trip_type !== 'return' || updatedParams.return_date) &&
-      (updatedParams.trip_type !== 'multicity' || body.multi_city_segments?.length >= 2)
-    );
-    
-    // Update completeness
-    if (isComplete !== updatedParams.is_complete) {
+
+    // Re-fetch final params to compute completeness/URLs consistently
+    const finalParams = (await db.getSearchParameters(
+      conversationId
+    )) as SearchParameters | null;
+
+    const isComplete = computeIsComplete(finalParams);
+
+    if (finalParams && isComplete !== Boolean(finalParams.is_complete)) {
       await db.updateSearchParameters(conversationId, { is_complete: isComplete });
     }
-    
-    // Generate URL if complete
-    let generatedUrl;
-    if (isComplete) {
-      const finalParams = await db.getSearchParameters(conversationId);
-      if (finalParams) {
-        generatedUrl = urlGenerator.generateBookingURL(finalParams, {
-          utm_source: 'chat',
-          utm_medium: 'ai',
-          utm_campaign: 'natural_language_search',
-        });
-        
-        // Update conversation with generated URL
-        await db.updateConversation(conversationId, {
-          generated_url: generatedUrl,
-          current_step: 'complete',
-        });
-      }
+
+    let generatedUrl: string | undefined;
+    if (isComplete && finalParams) {
+      generatedUrl = urlGenerator.generateBookingURL(finalParams, {
+        utm_source: "chat",
+        utm_medium: "ai",
+        utm_campaign: "natural_language_search",
+      });
+
+      await db.updateConversation(conversationId, {
+        generated_url: generatedUrl,
+        current_step: "complete",
+      });
     }
-    
-    // Get final state
-    const finalParams = await db.getSearchParameters(conversationId);
-    
-    return NextResponse.json({
-      conversation_id: conversationId,
-      parameters: finalParams,
-      booking_url: generatedUrl,
-      shareable_url: isComplete && finalParams
+
+    const shareable_url =
+      isComplete && finalParams
         ? urlGenerator.generateShareableURL(finalParams)
-        : undefined,
-      is_complete: isComplete,
-    });
-    
+        : undefined;
+
+    return withCors(
+      {
+        conversation_id: conversationId,
+        parameters: finalParams,
+        booking_url: generatedUrl,
+        shareable_url,
+        is_complete: isComplete,
+      },
+      request
+    );
   } catch (error) {
-    console.error('Error updating search parameters:', error);
-    
     if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        {
-          error: 'Validation error',
-          details: error.errors,
-        },
-        { status: 400 }
+      return withCors(
+        { error: "Validation error", details: error.errors },
+        request,
+        400
       );
     }
-    
-    return NextResponse.json(
+    return withCors(
       {
-        error: 'Internal server error',
-        message: error instanceof Error ? error.message : 'Unknown error',
+        error: "Internal server error",
+        message: error instanceof Error ? error.message : "Unknown error",
       },
-      { status: 500 }
+      request,
+      500
     );
   }
+}
+
+// OPTIONS (CORS preflight)
+export async function OPTIONS(request: Request) {
+  return preflight(request);
 }

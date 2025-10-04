@@ -1,88 +1,95 @@
 /**
  * Messages API Endpoints
  * POST /api/conversations/:conversationId/messages - Send message
- * GET /api/conversations/:conversationId/messages - Get message history
+ * GET  /api/conversations/:conversationId/messages - Get message history
  */
 
-import { NextRequest, NextResponse } from 'next/server';
-import { z } from 'zod';
-import { db } from '@/services/database';
-import { chatEngine } from '@/lib/chat-engine';
-import { FlightParser } from '@/lib/flight-parser';
-import { urlGenerator } from '@/lib/url-generator';
+import { z } from "zod";
+import { db } from "@/services/database";
+import { chatEngine } from "@/lib/chat-engine";
+import { FlightParser } from "@/lib/flight-parser";
+import { urlGenerator } from "@/lib/url-generator";
+import { withCors, preflight } from "@/lib/cors";
 
 // Request body schema
 const SendMessageRequestSchema = z.object({
-  message: z.string().min(1, 'Message cannot be empty'),
+  message: z.string().min(1, "Message cannot be empty"),
   user_location: z.string().optional(),
 });
 
-interface Params {
-  params: {
-    conversationId: string;
-  };
-}
+// Minimal type used only to shape the GET output without `any`
+type DBMessage = {
+  id: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  timestamp?: string;
+  metadata?: Record<string, unknown>;
+};
 
-export async function POST(request: NextRequest, { params }: Params) {
+export async function POST(
+  request: Request,
+  { params }: { params: { conversationId: string } }
+) {
   try {
-    const { conversationId } = await params;
+    const { conversationId } = params;
     const body = await request.json();
-    
-    // Validate request
+
+    // 1) Validate request
     const validatedBody = SendMessageRequestSchema.parse(body);
-    
-    // Check if conversation exists
+
+    // 2) Check conversation exists & is active
     const conversation = await db.getConversation(conversationId);
     if (!conversation) {
-      return NextResponse.json(
-        { error: 'Conversation not found' },
-        { status: 404 }
+      return withCors({ error: "Conversation not found" }, request, 404);
+    }
+    if (conversation.status !== "active") {
+      return withCors(
+        { error: "Conversation is no longer active" },
+        request,
+        400
       );
     }
-    
-    // Check if conversation is still active
-    if (conversation.status !== 'active') {
-      return NextResponse.json(
-        { error: 'Conversation is no longer active' },
-        { status: 400 }
-      );
-    }
-    
-    // Save user message
+
+    // 3) Save user message
     await db.createMessage({
       conversation_id: conversationId,
-      role: 'user',
+      role: "user",
       content: validatedBody.message,
+      metadata: validatedBody.user_location
+        ? { user_location: validatedBody.user_location }
+        : undefined,
     });
-    
-    // Get conversation history and current parameters
+
+    // 4) Load conversation history + current parameters
     const messages = await db.getMessages(conversationId);
     const searchParams = await db.getSearchParameters(conversationId);
-    
-    // Parse flight information from message
+
+    // 5) Parse flight info from the new message (static method on FlightParser)
+    const previous_searches = (messages ?? [])
+      .filter((m: DBMessage) => m.role === "user")
+      .map((m: DBMessage) => m.content)
+      .slice(-3);
+
     const parsedFlight = await FlightParser.parseFlightQuery(
       validatedBody.message,
       {
         user_location: validatedBody.user_location,
-        previous_searches: messages
-          .filter(m => m.role === 'user')
-          .map(m => m.content)
-          .slice(-3), // Last 3 user messages for context
+        previous_searches,
       }
     );
-    
-    // Generate AI response
+
+    // 6) Generate AI response via your chat engine
     const aiResponse = await chatEngine.generateResponse(
       validatedBody.message,
       messages,
       searchParams || undefined,
       { user_location: validatedBody.user_location }
     );
-    
-    // Save AI response
+
+    // 7) Save AI response
     await db.createMessage({
       conversation_id: conversationId,
-      role: 'assistant',
+      role: "assistant",
       content: aiResponse.content,
       metadata: {
         extracted_params: aiResponse.extracted_params,
@@ -90,161 +97,141 @@ export async function POST(request: NextRequest, { params }: Params) {
         requires_clarification: aiResponse.requires_clarification,
       },
     });
-    
-    // Update search parameters if extracted
+
+    // 8) If AI extracted params, merge + update conversation state
     if (aiResponse.extracted_params && searchParams) {
       const merged = chatEngine.mergeParameters(
         aiResponse.extracted_params,
         searchParams
       );
-      
-      // Determine trip type if not set - default to oneway if no return date
+
+      // Default trip type if missing
       if (!merged.trip_type) {
-        merged.trip_type = merged.return_date ? 'return' : 'oneway';
+        merged.trip_type = merged.return_date ? "return" : "oneway";
       }
-      
-      // Check if parameters are complete based on trip type
-      const hasBasicInfo = !!(merged.origin_code && merged.destination_code && merged.departure_date);
-      const isOneWayComplete = merged.trip_type === 'oneway' && hasBasicInfo;
-      const isReturnComplete = merged.trip_type === 'return' && hasBasicInfo && !!merged.return_date;
-      const isMultiCityComplete = merged.trip_type === 'multicity' && 
-        hasBasicInfo && searchParams.multi_city_segments?.length >= 2;
-      
-      const isComplete = isOneWayComplete || isReturnComplete || isMultiCityComplete;
-      
-      // Debug logging
-      console.log('Parameter completion check:', {
-        merged,
-        tripType: merged.trip_type,
-        hasBasicInfo,
-        isOneWayComplete,
-        isReturnComplete,
-        isMultiCityComplete,
-        isComplete
-      });
-      
+
+      const hasBasicInfo =
+        Boolean(merged.origin_code) &&
+        Boolean(merged.destination_code) &&
+        Boolean(merged.departure_date);
+
+      const isComplete =
+        (merged.trip_type === "oneway" && hasBasicInfo) ||
+        (merged.trip_type === "return" &&
+          hasBasicInfo &&
+          Boolean(merged.return_date)) ||
+        (merged.trip_type === "multicity" &&
+          Array.isArray(merged.multi_city_segments) &&
+          merged.multi_city_segments.length >= 2);
+
       merged.is_complete = isComplete;
-      
+
       await db.updateSearchParameters(conversationId, merged);
-      
-      // Generate URL if parameters are complete
-      let generatedUrl;
+
       if (isComplete) {
         const updatedParams = await db.getSearchParameters(conversationId);
-        console.log('Generating URL with params:', updatedParams);
-        
         if (updatedParams) {
-          try {
-            generatedUrl = urlGenerator.generateBookingURL(updatedParams, {
-              utm_source: 'chat',
-              utm_medium: 'ai',
-              utm_campaign: 'natural_language_search',
-            });
-            
-            console.log('Generated URL:', generatedUrl);
-            
-            // Update conversation with generated URL
-            await db.updateConversation(conversationId, {
-              generated_url: generatedUrl,
-              current_step: 'complete',
-              status: 'completed',
-            });
-          } catch (urlError) {
-            console.error('Error generating URL:', urlError);
-          }
+          const generatedUrl = urlGenerator.generateBookingURL(updatedParams, {
+            utm_source: "chat",
+            utm_medium: "ai",
+            utm_campaign: "natural_language_search",
+          });
+
+          await db.updateConversation(conversationId, {
+            generated_url: generatedUrl,
+            current_step: "complete",
+            status: "completed",
+          });
         }
-      } else {
-        console.log('Parameters not complete, missing:', {
-          origin: !merged.origin_code,
-          destination: !merged.destination_code,
-          departure: !merged.departure_date,
-          returnNeeded: merged.trip_type === 'return' && !merged.return_date,
-        });
-      }
-      
-      // Update conversation step
-      if (aiResponse.next_step && !isComplete) {
+      } else if (aiResponse.next_step) {
         await db.updateConversation(conversationId, {
-          current_step: aiResponse.next_step === 'collecting' ? 'collecting' : 
-                       aiResponse.next_step === 'confirming' ? 'confirming' : 'complete',
+          current_step:
+            aiResponse.next_step === "collecting"
+              ? "collecting"
+              : aiResponse.next_step === "confirming"
+              ? "confirming"
+              : "complete",
         });
       }
     }
-    
-    // Get updated conversation state
+
+    // 9) Return the updated state
     const updatedConversation = await db.getConversation(conversationId);
     const updatedParams = await db.getSearchParameters(conversationId);
-    
-    return NextResponse.json({
-      message_id: messages.length + 2, // User message + AI response
-      ai_response: aiResponse,
-      parsed_flight: parsedFlight,
-      search_parameters: updatedParams,
-      generated_url: updatedConversation?.generated_url,
-      conversation_status: updatedConversation?.status,
-      conversation_step: updatedConversation?.current_step,
-    });
-    
+
+    return withCors(
+      {
+        message_id: (messages?.length ?? 0) + 2, // user + assistant in this request
+        ai_response: aiResponse,
+        parsed_flight: parsedFlight,
+        search_parameters: updatedParams ?? null,
+        generated_url: updatedConversation?.generated_url,
+        conversation_status: updatedConversation?.status,
+        conversation_step: updatedConversation?.current_step,
+      },
+      request
+    );
   } catch (error) {
-    console.error('Error sending message:', error);
-    
     if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        {
-          error: 'Validation error',
-          details: error.errors,
-        },
-        { status: 400 }
+      return withCors(
+        { error: "Validation error", details: error.errors },
+        request,
+        400
       );
     }
-    
-    return NextResponse.json(
+    return withCors(
       {
-        error: 'Internal server error',
-        message: error instanceof Error ? error.message : 'Unknown error',
+        error: "Internal server error",
+        message: error instanceof Error ? error.message : "Unknown error",
       },
-      { status: 500 }
+      request,
+      500
     );
   }
 }
 
-export async function GET(request: NextRequest, { params }: Params) {
+export async function GET(
+  request: Request,
+  { params }: { params: { conversationId: string } }
+) {
   try {
-    const { conversationId } = await params;
-    
-    // Check if conversation exists
+    const { conversationId } = params;
+
     const conversation = await db.getConversation(conversationId);
     if (!conversation) {
-      return NextResponse.json(
-        { error: 'Conversation not found' },
-        { status: 404 }
-      );
+      return withCors({ error: "Conversation not found" }, request, 404);
     }
-    
-    // Get all messages
-    const messages = await db.getMessages(conversationId);
-    
-    return NextResponse.json({
-      conversation_id: conversationId,
-      messages: messages.map(msg => ({
-        id: msg.id,
-        role: msg.role,
-        content: msg.content,
-        timestamp: msg.timestamp,
-        metadata: msg.metadata,
-      })),
-      total: messages.length,
-    });
-    
-  } catch (error) {
-    console.error('Error getting messages:', error);
-    
-    return NextResponse.json(
+
+    const raw = (await db.getMessages(conversationId)) ?? [];
+    const messages: DBMessage[] = raw.map((msg: any) => ({
+      id: String(msg.id),
+      role: msg.role,
+      content: String(msg.content),
+      timestamp: msg.timestamp,
+      metadata: msg.metadata,
+    }));
+
+    return withCors(
       {
-        error: 'Internal server error',
-        message: error instanceof Error ? error.message : 'Unknown error',
+        conversation_id: conversationId,
+        messages,
+        total: messages.length,
       },
-      { status: 500 }
+      request
+    );
+  } catch (error) {
+    return withCors(
+      {
+        error: "Internal server error",
+        message: error instanceof Error ? error.message : "Unknown error",
+      },
+      request,
+      500
     );
   }
+}
+
+// OPTIONS (CORS preflight)
+export async function OPTIONS(request: Request) {
+  return preflight(request);
 }

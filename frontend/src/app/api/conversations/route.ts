@@ -1,89 +1,96 @@
 /**
  * Conversations API Endpoints
  * POST /api/conversations - Create new conversation
- * GET /api/conversations - List conversations (optional)
+ * GET  /api/conversations?user_id=... - (optional) list placeholder
  */
 
-import { NextRequest, NextResponse } from 'next/server';
-import { z } from 'zod';
-import { db } from '@/services/database';
-import { validateCreateConversationInput } from '@/models/conversation';
-import { chatEngine } from '@/lib/chat-engine';
-import { v4 as uuidv4 } from 'uuid';
+import { z } from "zod";
+import { db } from "@/services/database";
+import { chatEngine } from "@/lib/chat-engine";
+import { v4 as uuidv4 } from "uuid";
+import { withCors, preflight } from "@/lib/cors";
 
 // Request body schema
 const CreateConversationRequestSchema = z.object({
-  user_id: z.string().optional(), // Optional, will generate if not provided
-  initial_query: z.string().optional(),
+  user_id: z.string().optional(),     // Optional; generated when missing
+  initial_query: z.string().optional()
 });
 
-export async function POST(request: NextRequest) {
+type CreateConversationBody = z.infer<typeof CreateConversationRequestSchema>;
+
+type AIResponse = {
+  content: string;
+  extracted_params?: Record<string, unknown>;
+  requires_clarification?: boolean;
+  next_step?: "collecting" | "confirming" | "complete" | string;
+};
+
+export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    
-    // Validate request
-    const validatedBody = CreateConversationRequestSchema.parse(body);
-    
-    // Generate user_id if not provided
-    const userId = validatedBody.user_id || `anon_${uuidv4()}`;
-    
+    const body = (await request.json()) as unknown;
+    const validatedBody: CreateConversationBody =
+      CreateConversationRequestSchema.parse(body);
+
+    // user_id (stable even if not logged in)
+    const userId = validatedBody.user_id ?? `anon_${uuidv4()}`;
+
     // Create conversation
-    const conversation = await db.createConversation({
-      user_id: userId,
-    });
-    
-    // Create initial search parameters
+    const conversation = await db.createConversation({ user_id: userId });
+
+    // Seed default search parameters for this conversation
     await db.createSearchParameters({
       conversation_id: conversation.id,
-      trip_type: 'return', // Default
-      adults: 1, // Default
+      trip_type: "return",
+      adults: 1,
       children: 0,
       infants: 0,
-      is_complete: false,
+      is_complete: false
     });
-    
-    // Generate initial message
-    const initialMessage = chatEngine.generateInitialMessage(validatedBody.initial_query);
-    
-    // Save assistant's initial message
+
+    // System greeting (optionally influenced by initial_query)
+    const initialMessage = chatEngine.generateInitialMessage(
+      validatedBody.initial_query
+    );
+
+    // Persist assistant greeting
     await db.createMessage({
       conversation_id: conversation.id,
-      role: 'assistant',
-      content: initialMessage,
+      role: "assistant",
+      content: initialMessage
     });
-    
-    // If there's an initial query, process it
-    let aiResponse;
+
+    // Optionally process an initial user query
+    let aiResponse: AIResponse | undefined;
+
     if (validatedBody.initial_query) {
       // Save user's initial query
       await db.createMessage({
         conversation_id: conversation.id,
-        role: 'user',
-        content: validatedBody.initial_query,
+        role: "user",
+        content: validatedBody.initial_query
       });
-      
-      // Generate AI response
+
       const messages = await db.getMessages(conversation.id);
       const searchParams = await db.getSearchParameters(conversation.id);
-      
-      aiResponse = await chatEngine.generateResponse(
+
+      aiResponse = (await chatEngine.generateResponse(
         validatedBody.initial_query,
         messages,
-        searchParams || undefined
-      );
-      
+        searchParams ?? undefined
+      )) as AIResponse;
+
       // Save AI response
       await db.createMessage({
         conversation_id: conversation.id,
-        role: 'assistant',
+        role: "assistant",
         content: aiResponse.content,
         metadata: {
           extracted_params: aiResponse.extracted_params,
-          requires_clarification: aiResponse.requires_clarification,
-        },
+          requires_clarification: aiResponse.requires_clarification
+        }
       });
-      
-      // Update search parameters if extracted
+
+      // Merge parameters if any were extracted
       if (aiResponse.extracted_params && searchParams) {
         const merged = chatEngine.mergeParameters(
           aiResponse.extracted_params,
@@ -91,75 +98,79 @@ export async function POST(request: NextRequest) {
         );
         await db.updateSearchParameters(conversation.id, merged);
       }
-      
-      // Update conversation step
+
+      // Update step if provided
       if (aiResponse.next_step) {
         await db.updateConversation(conversation.id, {
-          current_step: aiResponse.next_step === 'collecting' ? 'collecting' : 
-                       aiResponse.next_step === 'confirming' ? 'confirming' : 'complete',
+          current_step:
+            aiResponse.next_step === "collecting"
+              ? "collecting"
+              : aiResponse.next_step === "confirming"
+              ? "confirming"
+              : "complete"
         });
       }
     }
-    
-    return NextResponse.json({
-      conversation_id: conversation.id,
-      user_id: userId,
-      initial_message: initialMessage,
-      ai_response: aiResponse,
-    }, { status: 201 });
-    
+
+    return withCors(
+      {
+        conversation_id: conversation.id,
+        user_id: userId,
+        initial_message: initialMessage,
+        ai_response: aiResponse
+      },
+      request,
+      201
+    );
   } catch (error) {
-    console.error('Error creating conversation:', error);
-    
     if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        {
-          error: 'Validation error',
-          details: error.errors,
-        },
-        { status: 400 }
+      return withCors(
+        { error: "Validation error", details: error.errors },
+        request,
+        400
       );
     }
-    
-    return NextResponse.json(
+
+    return withCors(
       {
-        error: 'Internal server error',
-        message: error instanceof Error ? error.message : 'Unknown error',
+        error: "Internal server error",
+        message: error instanceof Error ? error.message : "Unknown error"
       },
-      { status: 500 }
+      request,
+      500
     );
   }
 }
 
-// Optional: List conversations for a user
-export async function GET(request: NextRequest) {
+// Optional: list conversations (not implemented)
+export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('user_id');
-    
+    const url = new URL(request.url);
+    const userId = url.searchParams.get("user_id");
+
     if (!userId) {
-      return NextResponse.json(
-        { error: 'user_id parameter is required' },
-        { status: 400 }
-      );
+      return withCors({ error: "user_id parameter is required" }, request, 400);
     }
-    
-    // This would require adding a method to database service
-    // For now, return not implemented
-    return NextResponse.json(
-      { error: 'Listing conversations not yet implemented' },
-      { status: 501 }
+
+    // Placeholder response to match previous behavior
+    return withCors(
+      { error: "Listing conversations not yet implemented" },
+      request,
+      501
     );
-    
   } catch (error) {
-    console.error('Error listing conversations:', error);
-    
-    return NextResponse.json(
+    return withCors(
       {
-        error: 'Internal server error',
-        message: error instanceof Error ? error.message : 'Unknown error',
+        error: "Internal server error",
+        message: error instanceof Error ? error.message : "Unknown error"
       },
-      { status: 500 }
+      request,
+      500
     );
   }
+}
+
+// OPTIONS (CORS preflight)
+export async function OPTIONS(request: Request) {
+  return preflight(request);
 }
