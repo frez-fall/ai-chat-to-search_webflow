@@ -12,9 +12,9 @@ import {
   type UpdateSearchParametersInput,
 } from "@/models/search-parameters";
 import { urlGenerator } from "@/lib/url-generator";
-import { withCors, preflight } from "@/lib/cors";
+import { withCors, handlePreflight } from "@/lib/cors";
 
-// For strong typing of incoming multi-city segments in the PUT body
+/** Shape we accept for incoming multi-city segments in PUT */
 type IncomingSegment = {
   origin_code: string;
   origin_name: string;
@@ -23,45 +23,56 @@ type IncomingSegment = {
   departure_date: string;
 };
 
+/** Recompute completeness based on current params */
 function computeIsComplete(p: SearchParameters | null | undefined): boolean {
   if (!p) return false;
 
   const hasBasic =
-    Boolean(p.origin_code) && Boolean(p.destination_code) && Boolean(p.departure_date);
+    Boolean(p.origin_code) &&
+    Boolean(p.destination_code) &&
+    Boolean(p.departure_date);
 
-  if (p.trip_type === "oneway") return hasBasic;
-  if (p.trip_type === "return") return hasBasic && Boolean(p.return_date);
-  if (p.trip_type === "multicity") {
-    const count =
-      Array.isArray(p.multi_city_segments) ? p.multi_city_segments.length : 0;
-    return hasBasic && count >= 2;
+  switch (p.trip_type) {
+    case "oneway":
+      return hasBasic;
+    case "return":
+      return hasBasic && Boolean(p.return_date);
+    case "multicity": {
+      const count = Array.isArray(p.multi_city_segments)
+        ? p.multi_city_segments.length
+        : 0;
+      return hasBasic && count >= 2;
+    }
+    default:
+      return hasBasic;
   }
-
-  // Default fallback
-  return hasBasic;
 }
+
+// ---------- GET ----------
 
 export async function GET(
   request: Request,
-  { params }: { params: { conversationId: string } }
-) {
+  ctx: { params: { conversationId: string } }
+): Promise<Response> {
   try {
-    const { conversationId } = params;
+    const { conversationId } = ctx.params;
 
-    // Check conversation
+    // Must have a conversation
     const conversation = await db.getConversation(conversationId);
     if (!conversation) {
       return withCors({ error: "Conversation not found" }, request, 404);
     }
 
-    // Get current parameters
-    const searchParams = await db.getSearchParameters(conversationId);
+    const searchParams = (await db.getSearchParameters(
+      conversationId
+    )) as SearchParameters | null;
+
     if (!searchParams) {
       return withCors({ error: "Search parameters not found" }, request, 404);
     }
 
-    // Precompute URLs if complete
     const isComplete = Boolean(searchParams.is_complete);
+
     const booking_url = isComplete
       ? urlGenerator.generateBookingURL(searchParams, {
           utm_source: "chat",
@@ -70,8 +81,9 @@ export async function GET(
         })
       : undefined;
 
-    const shareable_url =
-      isComplete ? urlGenerator.generateShareableURL(searchParams) : undefined;
+    const shareable_url = isComplete
+      ? urlGenerator.generateShareableURL(searchParams)
+      : undefined;
 
     return withCors(
       {
@@ -94,19 +106,21 @@ export async function GET(
   }
 }
 
+// ---------- PUT ----------
+
 export async function PUT(
   request: Request,
-  { params }: { params: { conversationId: string } }
-) {
+  ctx: { params: { conversationId: string } }
+): Promise<Response> {
   try {
-    const { conversationId } = params;
+    const { conversationId } = ctx.params;
 
-    // Validate input body
+    // Validate payload
     const raw = (await request.json()) as unknown;
-    const validatedBody: UpdateSearchParametersInput =
+    const body: UpdateSearchParametersInput =
       UpdateSearchParametersSchema.parse(raw);
 
-    // Check conversation
+    // Conversation must exist & be active
     const conversation = await db.getConversation(conversationId);
     if (!conversation) {
       return withCors({ error: "Conversation not found" }, request, 404);
@@ -119,35 +133,42 @@ export async function PUT(
       );
     }
 
-    // Ensure existing params
-    const existingParams = await db.getSearchParameters(conversationId);
+    // Ensure there are parameters to update
+    const existingParams = (await db.getSearchParameters(
+      conversationId
+    )) as SearchParameters | null;
     if (!existingParams) {
       return withCors({ error: "Search parameters not found" }, request, 404);
     }
 
-    // Update base parameters
-    const updatedParams = await db.updateSearchParameters(
+    // Update base params
+    const updatedParams = (await db.updateSearchParameters(
       conversationId,
-      validatedBody
-    );
+      body
+    )) as SearchParameters;
 
-    // Handle multi-city segments if explicitly provided for multicity
+    // Replace multi-city segments if trip_type is multicity AND segments provided
     if (
-      validatedBody.trip_type === "multicity" &&
-      Array.isArray((validatedBody as any).multi_city_segments)
+      body.trip_type === "multicity" &&
+      Array.isArray(body.multi_city_segments)
     ) {
       if (!updatedParams.id) {
         return withCors(
-          { error: "Updated search parameters do not have an id" },
+          { error: "Updated search parameters are missing an id" },
           request,
           500
         );
       }
 
-      const incoming: IncomingSegment[] = (validatedBody as any)
-        .multi_city_segments;
+      const incoming: IncomingSegment[] = body.multi_city_segments.map((s) => ({
+        origin_code: s.origin_code,
+        origin_name: s.origin_name,
+        destination_code: s.destination_code,
+        destination_name: s.destination_name,
+        departure_date: s.departure_date,
+      }));
 
-      // Replace segments
+      // Replace existing segments
       await db.deleteMultiCitySegments(updatedParams.id);
 
       const segments = incoming.map((seg, index) => ({
@@ -163,7 +184,7 @@ export async function PUT(
       await db.createMultiCitySegments(segments);
     }
 
-    // Re-fetch final params to compute completeness/URLs consistently
+    // Re-fetch to compute final completeness & URLs consistently
     const finalParams = (await db.getSearchParameters(
       conversationId
     )) as SearchParameters | null;
@@ -171,19 +192,21 @@ export async function PUT(
     const isComplete = computeIsComplete(finalParams);
 
     if (finalParams && isComplete !== Boolean(finalParams.is_complete)) {
-      await db.updateSearchParameters(conversationId, { is_complete: isComplete });
+      await db.updateSearchParameters(conversationId, {
+        is_complete: isComplete,
+      });
     }
 
-    let generatedUrl: string | undefined;
+    let booking_url: string | undefined;
     if (isComplete && finalParams) {
-      generatedUrl = urlGenerator.generateBookingURL(finalParams, {
+      booking_url = urlGenerator.generateBookingURL(finalParams, {
         utm_source: "chat",
         utm_medium: "ai",
         utm_campaign: "natural_language_search",
       });
 
       await db.updateConversation(conversationId, {
-        generated_url: generatedUrl,
+        generated_url: booking_url,
         current_step: "complete",
       });
     }
@@ -197,7 +220,7 @@ export async function PUT(
       {
         conversation_id: conversationId,
         parameters: finalParams,
-        booking_url: generatedUrl,
+        booking_url,
         shareable_url,
         is_complete: isComplete,
       },
@@ -206,7 +229,7 @@ export async function PUT(
   } catch (error) {
     if (error instanceof z.ZodError) {
       return withCors(
-        { error: "Validation error", details: error.errors },
+        { error: "Validation error", details: error.issues },
         request,
         400
       );
@@ -222,7 +245,8 @@ export async function PUT(
   }
 }
 
-// OPTIONS (CORS preflight)
-export async function OPTIONS(request: Request) {
-  return preflight(request);
+// ---------- OPTIONS (CORS preflight) ----------
+
+export async function OPTIONS(request: Request): Promise<Response> {
+  return handlePreflight(request);
 }

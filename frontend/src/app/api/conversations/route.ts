@@ -1,21 +1,22 @@
 /**
  * Conversations API Endpoints
- * POST /api/conversations - Create new conversation
- * GET  /api/conversations?user_id=... - (optional) list placeholder
+ * POST /api/conversations                - Create new conversation
+ * GET  /api/conversations?user_id=...   - (optional) list placeholder
  */
 
 import { z } from "zod";
+import { v4 as uuidv4 } from "uuid";
+
 import { db } from "@/services/database";
 import { chatEngine } from "@/lib/chat-engine";
-import { v4 as uuidv4 } from "uuid";
-import { withCors, preflight } from "@/lib/cors";
+import { withCors, handlePreflight } from "@/lib/cors";
 
-// Request body schema
+// ---------- Schemas & Types ----------
+
 const CreateConversationRequestSchema = z.object({
-  user_id: z.string().optional(),     // Optional; generated when missing
-  initial_query: z.string().optional()
+  user_id: z.string().optional(),     // optional; generated when missing
+  initial_query: z.string().optional(),
 });
-
 type CreateConversationBody = z.infer<typeof CreateConversationRequestSchema>;
 
 type AIResponse = {
@@ -25,56 +26,56 @@ type AIResponse = {
   next_step?: "collecting" | "confirming" | "complete" | string;
 };
 
-export async function POST(request: Request) {
-  try {
-    const body = (await request.json()) as unknown;
-    const validatedBody: CreateConversationBody =
-      CreateConversationRequestSchema.parse(body);
+// ---------- Handlers ----------
 
-    // user_id (stable even if not logged in)
-    const userId = validatedBody.user_id ?? `anon_${uuidv4()}`;
+export async function POST(request: Request): Promise<Response> {
+  try {
+    const bodyUnknown = await request.json();
+    const body: CreateConversationBody =
+      CreateConversationRequestSchema.parse(bodyUnknown);
+
+    // Stable ID even for anonymous users
+    const userId = body.user_id ?? `anon_${uuidv4()}`;
 
     // Create conversation
     const conversation = await db.createConversation({ user_id: userId });
 
-    // Seed default search parameters for this conversation
+    // Seed default search parameters
     await db.createSearchParameters({
       conversation_id: conversation.id,
       trip_type: "return",
       adults: 1,
       children: 0,
       infants: 0,
-      is_complete: false
+      is_complete: false,
     });
 
     // System greeting (optionally influenced by initial_query)
-    const initialMessage = chatEngine.generateInitialMessage(
-      validatedBody.initial_query
-    );
+    const initialMessage = chatEngine.generateInitialMessage(body.initial_query);
 
     // Persist assistant greeting
     await db.createMessage({
       conversation_id: conversation.id,
       role: "assistant",
-      content: initialMessage
+      content: initialMessage,
     });
 
     // Optionally process an initial user query
     let aiResponse: AIResponse | undefined;
 
-    if (validatedBody.initial_query) {
+    if (body.initial_query) {
       // Save user's initial query
       await db.createMessage({
         conversation_id: conversation.id,
         role: "user",
-        content: validatedBody.initial_query
+        content: body.initial_query,
       });
 
       const messages = await db.getMessages(conversation.id);
       const searchParams = await db.getSearchParameters(conversation.id);
 
       aiResponse = (await chatEngine.generateResponse(
-        validatedBody.initial_query,
+        body.initial_query,
         messages,
         searchParams ?? undefined
       )) as AIResponse;
@@ -86,8 +87,8 @@ export async function POST(request: Request) {
         content: aiResponse.content,
         metadata: {
           extracted_params: aiResponse.extracted_params,
-          requires_clarification: aiResponse.requires_clarification
-        }
+          requires_clarification: aiResponse.requires_clarification,
+        },
       });
 
       // Merge parameters if any were extracted
@@ -107,7 +108,7 @@ export async function POST(request: Request) {
               ? "collecting"
               : aiResponse.next_step === "confirming"
               ? "confirming"
-              : "complete"
+              : "complete",
         });
       }
     }
@@ -117,7 +118,7 @@ export async function POST(request: Request) {
         conversation_id: conversation.id,
         user_id: userId,
         initial_message: initialMessage,
-        ai_response: aiResponse
+        ai_response: aiResponse,
       },
       request,
       201
@@ -125,7 +126,7 @@ export async function POST(request: Request) {
   } catch (error) {
     if (error instanceof z.ZodError) {
       return withCors(
-        { error: "Validation error", details: error.errors },
+        { error: "Validation error", details: error.issues },
         request,
         400
       );
@@ -134,7 +135,7 @@ export async function POST(request: Request) {
     return withCors(
       {
         error: "Internal server error",
-        message: error instanceof Error ? error.message : "Unknown error"
+        message: error instanceof Error ? error.message : "Unknown error",
       },
       request,
       500
@@ -143,7 +144,7 @@ export async function POST(request: Request) {
 }
 
 // Optional: list conversations (not implemented)
-export async function GET(request: Request) {
+export async function GET(request: Request): Promise<Response> {
   try {
     const url = new URL(request.url);
     const userId = url.searchParams.get("user_id");
@@ -162,7 +163,7 @@ export async function GET(request: Request) {
     return withCors(
       {
         error: "Internal server error",
-        message: error instanceof Error ? error.message : "Unknown error"
+        message: error instanceof Error ? error.message : "Unknown error",
       },
       request,
       500
@@ -171,6 +172,6 @@ export async function GET(request: Request) {
 }
 
 // OPTIONS (CORS preflight)
-export async function OPTIONS(request: Request) {
-  return preflight(request);
+export async function OPTIONS(request: Request): Promise<Response> {
+  return handlePreflight(request);
 }

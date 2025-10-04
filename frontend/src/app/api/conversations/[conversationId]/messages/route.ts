@@ -1,43 +1,92 @@
 /**
- * Messages API Endpoints
- * POST /api/conversations/:conversationId/messages - Send message
- * GET  /api/conversations/:conversationId/messages - Get message history
+ * Search Parameters API Endpoints
+ * GET /api/conversations/:conversationId/parameters  - Get search parameters
+ * PUT /api/conversations/:conversationId/parameters  - Update search parameters
  */
 
 import { z } from "zod";
 import { db } from "@/services/database";
-import { chatEngine } from "@/lib/chat-engine";
-import { FlightParser } from "@/lib/flight-parser";
+import {
+  UpdateSearchParametersSchema,
+  type UpdateSearchParametersInput,
+  type SearchParameters,
+} from "@/models/search-parameters";
 import { urlGenerator } from "@/lib/url-generator";
-import { withCors, preflight } from "@/lib/cors";
+import { withCors, handlePreflight } from "@/lib/cors";
 
-// Request body schema
-const SendMessageRequestSchema = z.object({
-  message: z.string().min(1, "Message cannot be empty"),
-  user_location: z.string().optional(),
-});
+// ---------- GET ----------
 
-// Minimal type used only to shape the GET output without `any`
-type DBMessage = {
-  id: string;
-  role: "user" | "assistant" | "system";
-  content: string;
-  timestamp?: string;
-  metadata?: Record<string, unknown>;
-};
-
-export async function POST(
+export async function GET(
   request: Request,
-  { params }: { params: { conversationId: string } }
-) {
+  ctx: { params: { conversationId: string } }
+): Promise<Response> {
   try {
-    const { conversationId } = params;
-    const body = await request.json();
+    const { conversationId } = ctx.params;
 
-    // 1) Validate request
-    const validatedBody = SendMessageRequestSchema.parse(body);
+    // Conversation must exist
+    const conversation = await db.getConversation(conversationId);
+    if (!conversation) {
+      return withCors({ error: "Conversation not found" }, request, 404);
+    }
 
-    // 2) Check conversation exists & is active
+    // Load parameters
+    const searchParams = (await db.getSearchParameters(
+      conversationId
+    )) as SearchParameters | null;
+
+    if (!searchParams) {
+      return withCors({ error: "Search parameters not found" }, request, 404);
+    }
+
+    // Generate URLs when complete
+    const booking_url = searchParams.is_complete
+      ? urlGenerator.generateBookingURL(searchParams, {
+          utm_source: "chat",
+          utm_medium: "ai",
+          utm_campaign: "natural_language_search",
+        })
+      : undefined;
+
+    const shareable_url = searchParams.is_complete
+      ? urlGenerator.generateShareableURL(searchParams)
+      : undefined;
+
+    return withCors(
+      {
+        conversation_id: conversationId,
+        parameters: searchParams,
+        booking_url,
+        shareable_url,
+      },
+      request
+    );
+  } catch (error) {
+    return withCors(
+      {
+        error: "Internal server error",
+        message: error instanceof Error ? error.message : "Unknown error",
+      },
+      request,
+      500
+    );
+  }
+}
+
+// ---------- PUT ----------
+
+export async function PUT(
+  request: Request,
+  ctx: { params: { conversationId: string } }
+): Promise<Response> {
+  try {
+    const { conversationId } = ctx.params;
+    const bodyUnknown = (await request.json()) as unknown;
+
+    // Validate payload
+    const validatedBody: UpdateSearchParametersInput =
+      UpdateSearchParametersSchema.parse(bodyUnknown);
+
+    // Conversation must exist and be active
     const conversation = await db.getConversation(conversationId);
     if (!conversation) {
       return withCors({ error: "Conversation not found" }, request, 404);
@@ -50,131 +99,119 @@ export async function POST(
       );
     }
 
-    // 3) Save user message
-    await db.createMessage({
-      conversation_id: conversationId,
-      role: "user",
-      content: validatedBody.message,
-      metadata: validatedBody.user_location
-        ? { user_location: validatedBody.user_location }
-        : undefined,
-    });
+    // Ensure parameters exist before updating
+    const existingParams = (await db.getSearchParameters(
+      conversationId
+    )) as SearchParameters | null;
+    if (!existingParams) {
+      return withCors({ error: "Search parameters not found" }, request, 404);
+    }
 
-    // 4) Load conversation history + current parameters
-    const messages = await db.getMessages(conversationId);
-    const searchParams = await db.getSearchParameters(conversationId);
+    // Update base parameters
+    const updatedParams = (await db.updateSearchParameters(
+      conversationId,
+      validatedBody
+    )) as SearchParameters;
 
-    // 5) Parse flight info from the new message (static method on FlightParser)
-    const previous_searches = (messages ?? [])
-      .filter((m: DBMessage) => m.role === "user")
-      .map((m: DBMessage) => m.content)
-      .slice(-3);
-
-    const parsedFlight = await FlightParser.parseFlightQuery(
-      validatedBody.message,
-      {
-        user_location: validatedBody.user_location,
-        previous_searches,
+    // Handle multi-city segments when provided
+    if (
+      validatedBody.trip_type === "multicity" &&
+      Array.isArray(validatedBody.multi_city_segments)
+    ) {
+      // We need the params row id to link segments
+      if (!updatedParams.id) {
+        return withCors(
+          {
+            error:
+              "Cannot update multi-city segments: missing search parameters id",
+          },
+          request,
+          500
+        );
       }
-    );
 
-    // 6) Generate AI response via your chat engine
-    const aiResponse = await chatEngine.generateResponse(
-      validatedBody.message,
-      messages,
-      searchParams || undefined,
-      { user_location: validatedBody.user_location }
-    );
+      // Replace existing segments with the new set
+      await db.deleteMultiCitySegments(updatedParams.id);
 
-    // 7) Save AI response
-    await db.createMessage({
-      conversation_id: conversationId,
-      role: "assistant",
-      content: aiResponse.content,
-      metadata: {
-        extracted_params: aiResponse.extracted_params,
-        parsed_flight: parsedFlight,
-        requires_clarification: aiResponse.requires_clarification,
-      },
-    });
-
-    // 8) If AI extracted params, merge + update conversation state
-    if (aiResponse.extracted_params && searchParams) {
-      const merged = chatEngine.mergeParameters(
-        aiResponse.extracted_params,
-        searchParams
+      const segments = validatedBody.multi_city_segments.map(
+        (seg, index: number) => ({
+          search_params_id: updatedParams.id as string,
+          sequence_order: index + 1,
+          origin_code: seg.origin_code,
+          origin_name: seg.origin_name,
+          destination_code: seg.destination_code,
+          destination_name: seg.destination_name,
+          departure_date: seg.departure_date,
+        })
       );
 
-      // Default trip type if missing
-      if (!merged.trip_type) {
-        merged.trip_type = merged.return_date ? "return" : "oneway";
-      }
+      await db.createMultiCitySegments(segments);
+    }
 
-      const hasBasicInfo =
-        Boolean(merged.origin_code) &&
-        Boolean(merged.destination_code) &&
-        Boolean(merged.departure_date);
+    // Re-evaluate completeness
+    const multiLen =
+      Array.isArray(validatedBody.multi_city_segments)
+        ? validatedBody.multi_city_segments.length
+        : Array.isArray(updatedParams.multi_city_segments)
+        ? updatedParams.multi_city_segments.length
+        : 0;
 
-      const isComplete =
-        (merged.trip_type === "oneway" && hasBasicInfo) ||
-        (merged.trip_type === "return" &&
-          hasBasicInfo &&
-          Boolean(merged.return_date)) ||
-        (merged.trip_type === "multicity" &&
-          Array.isArray(merged.multi_city_segments) &&
-          merged.multi_city_segments.length >= 2);
+    const isComplete =
+      Boolean(updatedParams.origin_code) &&
+      Boolean(updatedParams.destination_code) &&
+      Boolean(updatedParams.departure_date) &&
+      (updatedParams.trip_type !== "return" || Boolean(updatedParams.return_date)) &&
+      (updatedParams.trip_type !== "multicity" || multiLen >= 2);
 
-      merged.is_complete = isComplete;
+    if (isComplete !== updatedParams.is_complete) {
+      // Store completeness flip
+      await db.updateSearchParameters(conversationId, {
+        is_complete: isComplete,
+      });
+    }
 
-      await db.updateSearchParameters(conversationId, merged);
+    // If complete, generate booking URL and mark conversation step
+    let booking_url: string | undefined;
+    if (isComplete) {
+      const finalParams = (await db.getSearchParameters(
+        conversationId
+      )) as SearchParameters | null;
+      if (finalParams) {
+        booking_url = urlGenerator.generateBookingURL(finalParams, {
+          utm_source: "chat",
+          utm_medium: "ai",
+          utm_campaign: "natural_language_search",
+        });
 
-      if (isComplete) {
-        const updatedParams = await db.getSearchParameters(conversationId);
-        if (updatedParams) {
-          const generatedUrl = urlGenerator.generateBookingURL(updatedParams, {
-            utm_source: "chat",
-            utm_medium: "ai",
-            utm_campaign: "natural_language_search",
-          });
-
-          await db.updateConversation(conversationId, {
-            generated_url: generatedUrl,
-            current_step: "complete",
-            status: "completed",
-          });
-        }
-      } else if (aiResponse.next_step) {
         await db.updateConversation(conversationId, {
-          current_step:
-            aiResponse.next_step === "collecting"
-              ? "collecting"
-              : aiResponse.next_step === "confirming"
-              ? "confirming"
-              : "complete",
+          generated_url: booking_url,
+          current_step: "complete",
         });
       }
     }
 
-    // 9) Return the updated state
-    const updatedConversation = await db.getConversation(conversationId);
-    const updatedParams = await db.getSearchParameters(conversationId);
+    // Final payload
+    const finalParams = (await db.getSearchParameters(
+      conversationId
+    )) as SearchParameters | null;
 
     return withCors(
       {
-        message_id: (messages?.length ?? 0) + 2, // user + assistant in this request
-        ai_response: aiResponse,
-        parsed_flight: parsedFlight,
-        search_parameters: updatedParams ?? null,
-        generated_url: updatedConversation?.generated_url,
-        conversation_status: updatedConversation?.status,
-        conversation_step: updatedConversation?.current_step,
+        conversation_id: conversationId,
+        parameters: finalParams,
+        booking_url,
+        shareable_url:
+          isComplete && finalParams
+            ? urlGenerator.generateShareableURL(finalParams)
+            : undefined,
+        is_complete: isComplete,
       },
       request
     );
   } catch (error) {
     if (error instanceof z.ZodError) {
       return withCors(
-        { error: "Validation error", details: error.errors },
+        { error: "Validation error", details: error.issues },
         request,
         400
       );
@@ -190,48 +227,8 @@ export async function POST(
   }
 }
 
-export async function GET(
-  request: Request,
-  { params }: { params: { conversationId: string } }
-) {
-  try {
-    const { conversationId } = params;
+// ---------- OPTIONS (CORS preflight) ----------
 
-    const conversation = await db.getConversation(conversationId);
-    if (!conversation) {
-      return withCors({ error: "Conversation not found" }, request, 404);
-    }
-
-    const raw = (await db.getMessages(conversationId)) ?? [];
-    const messages: DBMessage[] = raw.map((msg: any) => ({
-      id: String(msg.id),
-      role: msg.role,
-      content: String(msg.content),
-      timestamp: msg.timestamp,
-      metadata: msg.metadata,
-    }));
-
-    return withCors(
-      {
-        conversation_id: conversationId,
-        messages,
-        total: messages.length,
-      },
-      request
-    );
-  } catch (error) {
-    return withCors(
-      {
-        error: "Internal server error",
-        message: error instanceof Error ? error.message : "Unknown error",
-      },
-      request,
-      500
-    );
-  }
-}
-
-// OPTIONS (CORS preflight)
-export async function OPTIONS(request: Request) {
-  return preflight(request);
+export async function OPTIONS(request: Request): Promise<Response> {
+  return handlePreflight(request);
 }
