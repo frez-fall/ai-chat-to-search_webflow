@@ -80,12 +80,13 @@ export function withCors(
   const origin = request.headers.get("Origin");
   const allowed = getAllowedOrigins();
 
-  // DEBUG: this is the line you asked for
+  if (process.env.CORS_DEBUG === "1") {
   console.log("CORS DEBUG", {
     nodeEnv: process.env.NODE_ENV,
     origin,
     allowed,
   });
+}
 
   if (process.env.NODE_ENV === "production") {
     if (!isOriginAllowed(origin, allowed)) {
