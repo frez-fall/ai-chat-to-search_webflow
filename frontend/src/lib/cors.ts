@@ -80,6 +80,13 @@ export function withCors(
   const origin = request.headers.get("Origin");
   const allowed = getAllowedOrigins();
 
+  // DEBUG: this is the line you asked for
+  console.log("CORS DEBUG", {
+    nodeEnv: process.env.NODE_ENV,
+    origin,
+    allowed,
+  });
+
   if (process.env.NODE_ENV === "production") {
     if (!isOriginAllowed(origin, allowed)) {
       return new Response(JSON.stringify({ error: "CORS: origin not allowed" }), {
@@ -105,6 +112,13 @@ export function withCors(
 export async function handlePreflight(request: Request): Promise<Response> {
   const origin = request.headers.get("Origin");
   const allowed = getAllowedOrigins();
+
+  // DEBUG for preflight visibility too
+  console.log("CORS DEBUG (preflight)", {
+    nodeEnv: process.env.NODE_ENV,
+    origin,
+    allowed,
+  });
 
   // Always return a 200 preflight so browsers can proceed,
   // but only echo specific origin if allowed
