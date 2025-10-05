@@ -196,7 +196,7 @@ export class IATAResolver {
       // First try common airports for speed
       const normalizedLocation = location.toLowerCase().trim();
       const commonMatch = this.COMMON_AIRPORTS[normalizedLocation as keyof typeof this.COMMON_AIRPORTS];
-      
+
       if (commonMatch) {
         if (commonMatch.length === 1) {
           return {
@@ -232,7 +232,7 @@ export class IATAResolver {
             confidence: z.number(),
           }).optional(),
         }),
-        prompt: `Convert the location "${location}" to IATA airport codes. 
+        prompt: `Convert the location "${location}" to IATA airport codes.
 
 Rules:
 1. Return the most likely airport(s) for this location
@@ -524,5 +524,6 @@ Should create 3 segments: SYD→BKK, BKK→NRT, NRT→SYD`,
 
 // Default parser instance
 export const flightParser = new FlightParser();
-export { DateParser, IATAResolver };
+// :arrow_down: Removed the duplicate re-export line
+// export { DateParser, IATAResolver };
 export default flightParser;

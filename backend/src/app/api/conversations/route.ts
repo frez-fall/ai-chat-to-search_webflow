@@ -6,10 +6,10 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { db } from '../../../services/database.js';
-import { validateCreateConversationInput } from '../../../models/conversation.js';
-import { chatEngine } from '../../../lib/chat-engine/index.js';
-import { v4 as uuidv4 } from 'uuid';
+import { db } from '@/services/database';
+import { validateCreateConversationInput } from '@/models/conversation';
+import { chatEngine } from '@/lib/chat-engine/index';
+//import { v4 as uuidv4 } from 'uuid';
 
 // Request body schema
 const CreateConversationRequestSchema = z.object({
@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
     const validatedBody = CreateConversationRequestSchema.parse(body);
     
     // Generate user_id if not provided
-    const userId = validatedBody.user_id || `anon_${uuidv4()}`;
+    const userId = validatedBody.user_id || `anon_${crypto.randomUUID()}`;
     
     // Create conversation
     const conversation = await db.createConversation({
@@ -115,7 +115,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           error: 'Validation error',
-          details: error.errors,
+          details: error.issues,
         },
         { status: 400 }
       );
