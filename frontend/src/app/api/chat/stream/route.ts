@@ -103,7 +103,7 @@ export async function POST(request: NextRequest) {
       return new Response(
         JSON.stringify({
           error: 'Validation error',
-          details: error.errors,
+          details: error.issues,
         }),
         { status: 400, headers: { 'Content-Type': 'application/json' } }
       );
