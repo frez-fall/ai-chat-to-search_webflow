@@ -146,10 +146,19 @@ export async function POST(request: Request): Promise<Response> {
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
+<<<<<<< HEAD
       return withCors(
         { error: "Validation error", details: error.issues },
         request,
         400
+=======
+      return new Response(
+        JSON.stringify({
+          error: 'Validation error',
+          details: error.issues,
+        }),
+        { status: 400, headers: { 'Content-Type': 'application/json' } }
+>>>>>>> webflow-migration-minimal
       );
     }
 

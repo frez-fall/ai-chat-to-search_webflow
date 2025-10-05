@@ -105,7 +105,7 @@ curl -X POST http://localhost:3001/api/conversations \
 - **Backend**: Next.js API Routes, TypeScript
 - **AI**: OpenAI GPT-4, AI SDK v5
 - **Database**: Supabase (PostgreSQL)
-- **Validation**: Zod
+- **Validation**: Zod 
 
 ## 📁 Project Structure
 

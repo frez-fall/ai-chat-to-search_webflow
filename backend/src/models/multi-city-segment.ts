@@ -6,10 +6,14 @@
 import { z } from 'zod';
 
 // IATA code validation
-const IATACode = z.string().regex(/^[A-Z]{3}$/, 'IATA code must be 3 uppercase letters');
+const IATACode = z
+  .string()
+  .regex(/^[A-Z]{3}$/, 'IATA code must be 3 uppercase letters');
 
 // Date validation (must be at least 14 days from today)
-const FutureDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format')
+const FutureDate = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format')
   .refine((date) => {
     const parsedDate = new Date(date);
     const minDate = new Date();
@@ -17,8 +21,11 @@ const FutureDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY
     return parsedDate >= minDate;
   }, 'Departure date must be at least 14 days from today');
 
-// Multi-city segment schema
-export const MultiCitySegmentSchema = z.object({
+/**
+ * Base object schema (no refinements). We derive all other schemas from this
+ * so that .omit(), .partial(), etc. are available.
+ */
+const MultiCitySegmentBase = z.object({
   id: z.string().uuid().optional(),
   search_params_id: z.string().uuid(),
   sequence_order: z.number().int().positive('Sequence order must be positive'),
@@ -27,108 +34,174 @@ export const MultiCitySegmentSchema = z.object({
   destination_code: IATACode,
   destination_name: z.string().min(1, 'Destination name is required'),
   departure_date: FutureDate,
-}).refine((data) => data.origin_code !== data.destination_code, {
-  message: 'Origin and destination must be different',
-  path: ['destination_code'],
+});
+
+/**
+ * Full schema with cross-field validation applied.
+ */
+export const MultiCitySegmentSchema = MultiCitySegmentBase.superRefine((data, ctx) => {
+  if (data.origin_code === data.destination_code) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Origin and destination must be different',
+      path: ['destination_code'],
+    });
+  }
 });
 
 export type MultiCitySegment = z.infer<typeof MultiCitySegmentSchema>;
 
-// Input validation for creating segments
-export const CreateMultiCitySegmentSchema = MultiCitySegmentSchema.omit({ id: true });
+/**
+ * Input validation for creating segments
+ * Derived from the BASE schema (so .omit works), plus the same cross-field validation.
+ */
+export const CreateMultiCitySegmentSchema = MultiCitySegmentBase.omit({ id: true }).superRefine(
+  (data, ctx) => {
+    if (data.origin_code === data.destination_code) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Origin and destination must be different',
+        path: ['destination_code'],
+      });
+    }
+  }
+);
 export type CreateMultiCitySegmentInput = z.infer<typeof CreateMultiCitySegmentSchema>;
 
-// Input validation for updating segments
-export const UpdateMultiCitySegmentSchema = MultiCitySegmentSchema.partial()
-  .omit({ id: true, search_params_id: true });
+/**
+ * Input validation for updating segments
+ * Make fields optional and omit server-controlled ids.
+ * Cross-field validation is conditional (only if both codes present).
+ */
+export const UpdateMultiCitySegmentSchema = MultiCitySegmentBase.partial()
+  .omit({ id: true, search_params_id: true })
+  .superRefine((data, ctx) => {
+    // Only validate if both codes are provided in the partial update
+    if (data.origin_code && data.destination_code && data.origin_code === data.destination_code) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Origin and destination must be different',
+        path: ['destination_code'],
+      });
+    }
+  });
+
 export type UpdateMultiCitySegmentInput = z.infer<typeof UpdateMultiCitySegmentSchema>;
 
-// Validation functions
+/**
+ * Validation functions
+ */
 export function validateMultiCitySegment(data: unknown): MultiCitySegment {
   return MultiCitySegmentSchema.parse(data);
 }
 
-export function validateCreateMultiCitySegmentInput(data: unknown): CreateMultiCitySegmentInput {
+export function validateCreateMultiCitySegmentInput(
+  data: unknown
+): CreateMultiCitySegmentInput {
   return CreateMultiCitySegmentSchema.parse(data);
 }
 
-export function validateUpdateMultiCitySegmentInput(data: unknown): UpdateMultiCitySegmentInput {
+export function validateUpdateMultiCitySegmentInput(
+  data: unknown
+): UpdateMultiCitySegmentInput {
   return UpdateMultiCitySegmentSchema.parse(data);
 }
 
-// Validation for multiple segments
+/**
+ * Validation for multiple segments
+ */
 export function validateMultiCitySegments(data: unknown): MultiCitySegment[] {
   const segments = z.array(MultiCitySegmentSchema).parse(data);
-  
-  // Additional validation for segment sequence
+
+  // Additional validation for segment sequence and dates
   validateSegmentSequence(segments);
   validateSegmentDates(segments);
-  
+
   return segments;
 }
 
-// Helper functions
+/**
+ * Helper functions
+ */
 export function validateSegmentSequence(segments: MultiCitySegment[]): void {
-  const sortedSegments = [...segments].sort((a, b) => a.sequence_order - b.sequence_order);
-  
+  const sortedSegments = [...segments].sort(
+    (a, b) => a.sequence_order - b.sequence_order
+  );
+
   for (let i = 0; i < sortedSegments.length; i++) {
     if (sortedSegments[i].sequence_order !== i + 1) {
-      throw new Error(`Invalid segment sequence. Expected sequence order ${i + 1}, got ${sortedSegments[i].sequence_order}`);
+      throw new Error(
+        `Invalid segment sequence. Expected sequence order ${i + 1}, got ${sortedSegments[i].sequence_order}`
+      );
     }
   }
 }
 
 export function validateSegmentDates(segments: MultiCitySegment[]): void {
-  const sortedSegments = [...segments].sort((a, b) => a.sequence_order - b.sequence_order);
-  
+  const sortedSegments = [...segments].sort(
+    (a, b) => a.sequence_order - b.sequence_order
+  );
+
   for (let i = 1; i < sortedSegments.length; i++) {
     const prevDate = new Date(sortedSegments[i - 1].departure_date);
     const currentDate = new Date(sortedSegments[i].departure_date);
-    
+
     if (currentDate <= prevDate) {
-      throw new Error(`Multi-city segment dates must be in chronological order. Segment ${i + 1} date must be after segment ${i} date`);
+      throw new Error(
+        `Multi-city segment dates must be in chronological order. Segment ${
+          i + 1
+        } date must be after segment ${i} date`
+      );
     }
   }
 }
 
 export function validateSegmentConnections(segments: MultiCitySegment[]): void {
-  const sortedSegments = [...segments].sort((a, b) => a.sequence_order - b.sequence_order);
-  
+  const sortedSegments = [...segments].sort(
+    (a, b) => a.sequence_order - b.sequence_order
+  );
+
   for (let i = 1; i < sortedSegments.length; i++) {
     const prevDestination = sortedSegments[i - 1].destination_code;
     const currentOrigin = sortedSegments[i].origin_code;
-    
+
     if (prevDestination !== currentOrigin) {
-      throw new Error(`Multi-city segments must connect. Segment ${i} origin (${currentOrigin}) must match segment ${i} destination (${prevDestination})`);
+      throw new Error(
+        `Multi-city segments must connect. Segment ${i} origin (${currentOrigin}) must match segment ${i} destination (${prevDestination})`
+      );
     }
   }
 }
 
 // Sort segments by sequence order
-export function sortSegmentsByOrder(segments: MultiCitySegment[]): MultiCitySegment[] {
+export function sortSegmentsByOrder(
+  segments: MultiCitySegment[]
+): MultiCitySegment[] {
   return [...segments].sort((a, b) => a.sequence_order - b.sequence_order);
 }
 
 // Get total journey duration
 export function getJourneyDuration(segments: MultiCitySegment[]): number {
   if (segments.length === 0) return 0;
-  
+
   const sortedSegments = sortSegmentsByOrder(segments);
   const startDate = new Date(sortedSegments[0].departure_date);
   const endDate = new Date(sortedSegments[sortedSegments.length - 1].departure_date);
-  
-  return Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+
+  return Math.ceil(
+    (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
+  );
 }
 
 // Get all unique destinations
 export function getUniqueDestinations(segments: MultiCitySegment[]): string[] {
   const destinations = new Set<string>();
-  
-  segments.forEach(segment => {
+
+  segments.forEach((segment) => {
     destinations.add(segment.origin_code);
     destinations.add(segment.destination_code);
   });
-  
+
   return Array.from(destinations);
 }
 

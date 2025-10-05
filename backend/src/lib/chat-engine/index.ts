@@ -5,9 +5,10 @@
 
 import { openai } from '@ai-sdk/openai';
 import { generateText, streamText } from 'ai';
-import type { Message } from '../../models/message.js';
-import type { SearchParameters, UpdateSearchParametersInput } from '../../models/search-parameters.js';
-import type { Conversation } from '../../models/conversation.js';
+import type { Message } from '@/models/message';
+import type { SearchParameters, UpdateSearchParametersInput } from '@/models/search-parameters';
+import type { Conversation } from '@/models/conversation';
+import { FlightParser } from '@/lib/flight-parser'; // :white_check_mark: use your existing parser
 
 // Flight information extraction schema
 export interface FlightInfo {
@@ -120,71 +121,51 @@ Extract flight information and respond naturally while being helpful and excited
       // Build conversation context
       const messages = this.buildMessageHistory(conversationHistory, userMessage);
 
-      // Generate response with function calling for parameter extraction
+      // :no_entry: Removed tools: {} (not compatible with v5 type you're using)
+      // :white_check_mark: Just generate assistant text
       const result = await generateText({
         model: openai(this.config.model),
         system: this.getSystemPrompt(),
         messages,
         temperature: this.config.temperature,
-        maxTokens: this.config.maxTokens,
-        tools: {
-          extractFlightInfo: {
-            description: 'Extract flight search parameters from user input',
-            parameters: {
-              type: 'object',
-              properties: {
-                origin_code: { type: 'string', description: '3-letter IATA airport code for departure' },
-                origin_name: { type: 'string', description: 'Human-readable departure location' },
-                destination_code: { type: 'string', description: '3-letter IATA airport code for arrival' },
-                destination_name: { type: 'string', description: 'Human-readable arrival location' },
-                departure_date: { type: 'string', description: 'Departure date in YYYY-MM-DD format' },
-                return_date: { type: 'string', description: 'Return date in YYYY-MM-DD format (for round trips)' },
-                trip_type: { 
-                  type: 'string', 
-                  enum: ['return', 'oneway', 'multicity'],
-                  description: 'Type of trip'
-                },
-                adults: { type: 'number', description: 'Number of adult passengers (1-9)' },
-                children: { type: 'number', description: 'Number of child passengers 2-11 years (0-8)' },
-                infants: { type: 'number', description: 'Number of infant passengers under 2 years (0-8)' },
-                cabin_class: { 
-                  type: 'string',
-                  enum: ['Y', 'S', 'C', 'F'],
-                  description: 'Cabin class preference'
-                },
-                multi_city_segments: {
-                  type: 'array',
-                  items: {
-                    type: 'object',
-                    properties: {
-                      origin_code: { type: 'string' },
-                      origin_name: { type: 'string' },
-                      destination_code: { type: 'string' },
-                      destination_name: { type: 'string' },
-                      departure_date: { type: 'string' },
-                      sequence_order: { type: 'number' }
-                    }
-                  },
-                  description: 'Flight segments for multi-city trips'
-                }
-              }
-            }
-          }
-        },
+        maxOutputTokens: this.config.maxTokens,
       });
 
-      // Extract flight information from function calls
-      let extractedParams: FlightInfo | undefined;
-      if (result.toolCalls && result.toolCalls.length > 0) {
-        const flightInfoCall = result.toolCalls.find(call => call.toolName === 'extractFlightInfo');
-        if (flightInfoCall) {
-          extractedParams = flightInfoCall.args as FlightInfo;
-        }
-      }
+      // :white_check_mark: Use your FlightParser to extract structured params instead of tool calls
+      const previousUserStrings = conversationHistory
+        .filter((m) => m.role === 'user')
+        .map((m) => m.content)
+        .slice(-3);
+
+      const parsed = await FlightParser.parseFlightQuery(userMessage, {
+        user_location: context?.user_location,
+        previous_searches: previousUserStrings,
+      });
+
+      // Map your ParsedFlightInfo into FlightInfo shape (best-effort mapping)
+      const extractedParams: FlightInfo | undefined = parsed
+        ? {
+            origin_code: parsed.origin?.code,
+            origin_name: parsed.origin?.name,
+            destination_code: parsed.destination?.code,
+            destination_name: parsed.destination?.name,
+            departure_date: parsed.dates?.departure,
+            return_date: parsed.dates?.return,
+            trip_type: parsed.preferences?.trip_type,
+            // passengers and cabin_class defaults will be handled by mergeParameters
+            adults: parsed.passengers?.adults,
+            children: parsed.passengers?.children,
+            infants: parsed.passengers?.infants,
+            cabin_class: parsed.preferences?.cabin_class,
+            // (optional) multi_city_segments not provided by this parser yet
+          }
+        : undefined;
 
       // Determine if clarification is needed
       const requiresClarification = this.needsClarification(result.text, extractedParams);
-      const clarificationPrompt = requiresClarification ? this.generateClarificationPrompt(extractedParams) : undefined;
+      const clarificationPrompt = requiresClarification
+        ? this.generateClarificationPrompt(extractedParams)
+        : undefined;
 
       // Determine next conversation step
       const nextStep = this.determineNextStep(extractedParams, currentParams);
@@ -193,8 +174,8 @@ Extract flight information and respond naturally while being helpful and excited
         content: result.text,
         extracted_params: extractedParams,
         requires_clarification: requiresClarification,
-        clarification_prompt,
-        next_step,
+        clarification_prompt: clarificationPrompt,
+        next_step: nextStep,
       };
     } catch (error) {
       console.error('Error generating AI response:', error);
@@ -215,7 +196,7 @@ Extract flight information and respond naturally while being helpful and excited
       system: this.getSystemPrompt(),
       messages,
       temperature: this.config.temperature,
-      maxTokens: this.config.maxTokens,
+      maxOutputTokens: this.config.maxTokens,
     });
   }
 
@@ -224,14 +205,14 @@ Extract flight information and respond naturally while being helpful and excited
     if (initialQuery) {
       return `Hi! I can help you search for flights. I see you're interested in "${initialQuery}" - that sounds like an amazing trip! Let me help you find the perfect flights. Can you tell me more about your travel plans?`;
     }
-    
-    return `Hi! I'm here to help you find amazing flights for your next adventure! ✈️ Where would you like to go? Just tell me your travel plans in your own words - like "I want to visit Tokyo in spring" or "Family trip to Europe next summer" - and I'll help you find the perfect flights!`;
+
+    return `Hi! I'm here to help you find amazing flights for your next adventure! :airplane: Where would you like to go? Just tell me your travel plans in your own words - like "I want to visit Tokyo in spring" or "Family trip to Europe next summer" - and I'll help you find the perfect flights!`;
   }
 
   // Build message history for AI context
   private buildMessageHistory(history: Message[], newMessage: string) {
-    const messages = history.map(msg => ({
-      role: msg.role === 'user' ? 'user' as const : 'assistant' as const,
+    const messages = history.map((msg) => ({
+      role: msg.role === 'user' ? ('user' as const) : ('assistant' as const),
       content: msg.content,
     }));
 
@@ -258,7 +239,7 @@ Extract flight information and respond naturally while being helpful and excited
       'NRT, HND',
     ];
 
-    return clarificationKeywords.some(keyword => 
+    return clarificationKeywords.some((keyword) =>
       response.toLowerCase().includes(keyword.toLowerCase())
     );
   }
@@ -268,15 +249,14 @@ Extract flight information and respond naturally while being helpful and excited
     if (!params) return undefined;
 
     // Common airport disambiguations
-    const ambiguousDestinations = {
-      'LON': 'Which London airport - Heathrow (LHR), Gatwick (LGW), or Stansted (STN)?',
-      'NYC': 'Which New York airport - JFK, LaGuardia (LGA), or Newark (EWR)?',
-      'TYO': 'Which Tokyo airport - Narita (NRT) or Haneda (HND)?',
-      'PAR': 'Which Paris airport - Charles de Gaulle (CDG) or Orly (ORY)?',
-      'CHI': 'Which Chicago airport - O\'Hare (ORD) or Midway (MDW)?',
+    const ambiguousDestinations: Record<string, string> = {
+      LON: 'Which London airport - Heathrow (LHR), Gatwick (LGW), or Stansted (STN)?',
+      NYC: 'Which New York airport - JFK, LaGuardia (LGA), or Newark (EWR)?',
+      TYO: 'Which Tokyo airport - Narita (NRT) or Haneda (HND)?',
+      PAR: 'Which Paris airport - Charles de Gaulle (CDG) or Orly (ORY)?',
+      CHI: "Which Chicago airport - O'Hare (ORD) or Midway (MDW)?",
     };
 
-    // Check if destination needs clarification
     if (params.destination_name) {
       const city = params.destination_name.toLowerCase();
       if (city.includes('london')) return ambiguousDestinations.LON;
@@ -296,15 +276,16 @@ Extract flight information and respond naturally while being helpful and excited
   ): 'collecting' | 'confirming' | 'complete' {
     if (!extractedParams) return 'collecting';
 
-    // Check completeness
     const hasOrigin = extractedParams.origin_code || currentParams?.origin_code;
     const hasDestination = extractedParams.destination_code || currentParams?.destination_code;
     const hasDeparture = extractedParams.departure_date || currentParams?.departure_date;
-    
+
     const tripType = extractedParams.trip_type || currentParams?.trip_type || 'return';
-    const hasReturn = tripType !== 'return' || extractedParams.return_date || currentParams?.return_date;
-    
-    const hasMultiCity = tripType !== 'multicity' || 
+    const hasReturn =
+      tripType !== 'return' || extractedParams.return_date || currentParams?.return_date;
+
+    const hasMultiCity =
+      tripType !== 'multicity' ||
       (extractedParams.multi_city_segments && extractedParams.multi_city_segments.length >= 2);
 
     if (hasOrigin && hasDestination && hasDeparture && hasReturn && hasMultiCity) {
@@ -315,10 +296,7 @@ Extract flight information and respond naturally while being helpful and excited
   }
 
   // Merge extracted parameters with existing parameters
-  mergeParameters(
-    extracted: FlightInfo,
-    current?: SearchParameters
-  ): UpdateSearchParametersInput {
+  mergeParameters(extracted: FlightInfo, current?: SearchParameters): UpdateSearchParametersInput {
     return {
       origin_code: extracted.origin_code || current?.origin_code,
       origin_name: extracted.origin_name || current?.origin_name,
@@ -327,9 +305,9 @@ Extract flight information and respond naturally while being helpful and excited
       departure_date: extracted.departure_date || current?.departure_date,
       return_date: extracted.return_date || current?.return_date,
       trip_type: extracted.trip_type || current?.trip_type,
-      adults: extracted.adults || current?.adults || 1,
-      children: extracted.children || current?.children || 0,
-      infants: extracted.infants || current?.infants || 0,
+      adults: extracted.adults ?? current?.adults ?? 1,
+      children: extracted.children ?? current?.children ?? 0,
+      infants: extracted.infants ?? current?.infants ?? 0,
       cabin_class: extracted.cabin_class || current?.cabin_class,
       is_complete: false, // Will be calculated later
     };
