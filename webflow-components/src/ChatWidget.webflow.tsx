@@ -18,6 +18,6 @@ export default declareComponent(ChatWidget, {
     // Keep SSR off for Code Components to avoid hydration duplication issues
     ssr: false,
     // Lets Webflow tag styles (h1, p, button, etc.) cascade inside the Shadow DOM
-    applyTagSelectors: true,
+    applyTagSelectors: false,
   },
 });
