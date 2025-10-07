@@ -524,7 +524,7 @@ export default function ChatModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{backgroundColor: 'rgba(23, 19, 22, 0.7)'}}>
+    <div className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{backgroundColor: 'rgba(23, 19, 22, 0.8)'}}>
       <div
         ref={modalRef}
         className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl h-[80vh] flex flex-col animate-slide-up"
