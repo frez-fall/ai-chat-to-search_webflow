@@ -1,0 +1,56 @@
+/* webflow-components/styles/tokens.css */
+/* Injected into the component's Shadow DOM. Keep it minimal. */
+
+:host, :root {
+  /* Backgrounds */
+  --background: #171316;
+  --foreground: #FDFEFD;
+
+  /* Brand Colors */
+  --brand-primary: #1156F9;
+  --brand-primary-hover: #87AAFB;
+  --brand-primary-active: #1E40AF;
+  --brand-primary-light: #9EBAFB;
+
+  --brand-secondary: #FF7433;
+  --brand-secondary-hover: #FEAB83;
+  --brand-secondary-active: #FF7433;
+  --brand-secondary-light: #FEB998;
+
+  --brand-accent: #171316;
+  --brand-accent-hover: #D97706;
+  --brand-accent-active: #B45309;
+  --brand-accent-light: #FEF3C7;
+
+  /* Status Colors */
+  --brand-success: #10B981;
+  --brand-error: #EF4444;
+  --brand-warning: #F59E0B;
+  --brand-info: #3B82F6;
+
+  /* Text Colors */
+  --text-primary: #FDFEFD;
+  --text-secondary: #9CA3AF;
+  --text-tertiary: #6B7280;
+  --text-on-brand: #FDFEFD;
+
+  /* Borders */
+  --border-default: #E5E7EB;
+  --border-brand: var(--brand-primary);
+
+  /* Fonts */
+  --font-brand: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-system: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "SF Mono", Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+
+  /* Chat-specific (safe defaults) */
+  --chat-radius: 14px;
+  --chat-font-size: 16px;
+  --chat-small: 14px;
+
+  /* Bubble backgrounds (adjust if needed) */
+  --chat-user-bubble-bg: color-mix(in srgb, var(--brand-primary) 12%, transparent);
+  --chat-user-text: var(--text-primary);
+  --chat-assistant-bubble-bg: color-mix(in srgb, #FFFFFF 8%, transparent);
+  --chat-assistant-text: var(--text-secondary);
+}

@@ -1,7 +1,9 @@
+// ChatWidget.webflow.tsx (wrapper)
 import { declareComponent } from "@webflow/react";
 import { props } from "@webflow/data-types";
 import ChatWidget from "./ChatWidget";
-import "./tailwind.out.css"; // compiled Tailwind output
+import "./styles/tokens.css";
+import "./tailwind.out.css";
 
 export default declareComponent(ChatWidget, {
   name: "PayLater Chat Widget",
@@ -9,11 +11,13 @@ export default declareComponent(ChatWidget, {
   props: {
     apiBaseUrl: props.Text({
       name: "API Base URL",
-      defaultValue: "https://<your-vercel-backend>.vercel.app"
-    })
+      defaultValue: "https://<your-vercel-backend>.vercel.app",
+    }),
   },
   options: {
-    ssr: false,              // <<< IMPORTANT: avoid hydration mismatch (duplicates)
-    applyTagSelectors: true  // if you want Webflow tag styles in Shadow DOM
-  }
+    // Keep SSR off for Code Components to avoid hydration duplication issues
+    ssr: false,
+    // Lets Webflow tag styles (h1, p, button, etc.) cascade inside the Shadow DOM
+    applyTagSelectors: true,
+  },
 });
