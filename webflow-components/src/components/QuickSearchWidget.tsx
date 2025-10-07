@@ -120,7 +120,7 @@ export default function QuickSearchWidget({ onSearch }: QuickSearchWidgetProps) 
                 className="w-full px-6 py-4 pr-44 text-lg bg-white rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500"
                 style={{
                   borderColor: 'var(--border-default)',
-                  color: 'var(--text-primary)'
+                  color: 'var(--text-tertiary)'
                 }}
                 onFocus={(e) => {
                   e.currentTarget.style.borderColor = 'var(--brand-primary)';
@@ -145,7 +145,7 @@ export default function QuickSearchWidget({ onSearch }: QuickSearchWidgetProps) 
               <button
                 type="button"
                 onClick={() => setShowDestinationToggles(!showDestinationToggles)}
-                className="text-gray-400 text-lg hover:text-gray-300 transition-colors inline-flex items-center space-x-2"
+                className="text-white text-lg hover:text-gray-300 transition-colors inline-flex items-center space-x-2"
               >
                 <span className="underline">Not sure where you wanna go? Let's help you figure it out!</span>
                 {showDestinationToggles ? (
