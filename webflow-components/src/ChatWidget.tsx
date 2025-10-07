@@ -1,15 +1,16 @@
 // webflow-components/src/ChatWidget.tsx
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { ApiConfigProvider } from "./ApiConfigContext";
 import QuickSearchWidget from "./components/QuickSearchWidget";
 import ChatModal from "./components/ChatModal";
 import { useLockBodyScroll } from "./hooks/useLockBodyScroll";
+import PortalWithStyles from "./components/Portal";
 
 export default function ChatWidget({ apiBaseUrl }: { apiBaseUrl: string }) {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [initialQuery, setInitialQuery] = useState("");
+  const rootRef = useRef<HTMLDivElement | null>(null);
 
-  // :lock: Lock/unlock page scroll when modal opens/closes
   useLockBodyScroll(isChatOpen);
 
   const handleSearch = (q: string) => {
@@ -23,17 +24,29 @@ export default function ChatWidget({ apiBaseUrl }: { apiBaseUrl: string }) {
 
   return (
     <ApiConfigProvider apiBaseUrl={apiBaseUrl}>
-      <div className="w-full" data-modal-open={isChatOpen ? "true" : "false"}>
+      <div
+        ref={rootRef}
+        className="w-full chat-root"
+        data-modal-open={isChatOpen ? "true" : "false"}
+      >
         <div className="w-full max-w-3xl mx-auto px-4">
           <QuickSearchWidget onSearch={handleSearch} />
         </div>
 
-        <ChatModal
-          isOpen={isChatOpen}
-          onClose={() => setIsChatOpen(false)}
-          initialQuery={initialQuery}
-          onBookingUrlGenerated={handleBookingUrlGenerated}
-        />
+        {/* Render modal above Webflow with inherited Shadow DOM styles/vars */}
+        <PortalWithStyles
+          inheritFrom={rootRef.current}
+          style={{ zIndex: 2147483647 }}
+        >
+          <div style={{ pointerEvents: isChatOpen ? "auto" : "none" }}>
+            <ChatModal
+              isOpen={isChatOpen}
+              onClose={() => setIsChatOpen(false)}
+              initialQuery={initialQuery}
+              onBookingUrlGenerated={handleBookingUrlGenerated}
+            />
+          </div>
+        </PortalWithStyles>
       </div>
     </ApiConfigProvider>
   );
