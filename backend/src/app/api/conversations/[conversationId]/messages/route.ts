@@ -1,7 +1,7 @@
 /**
  * Messages API Endpoints
  * POST /api/conversations/:conversationId/messages - Send message
- * GET /api/conversations/:conversationId/messages - Get message history
+ * GET  /api/conversations/:conversationId/messages - Get message history
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -10,7 +10,6 @@ import { db } from '@/services/database';
 import { chatEngine } from '@/lib/chat-engine';
 import { FlightParser } from '@/lib/flight-parser';
 import { urlGenerator } from '@/lib/url-generator';
-import type { SearchParameters } from '@/models/search-parameters';
 
 const SendMessageRequestSchema = z.object({
   message: z.string().min(1, 'Message cannot be empty'),
@@ -23,27 +22,21 @@ interface Params {
   };
 }
 
-// Single source of truth for "complete"
-function isParamsComplete(p: SearchParameters): boolean {
-  const hasOrigin = !!p.origin_code;
-  const hasDestination = !!p.destination_code;
-  const hasDeparture = !!p.departure_date;
-  const hasReturn = p.trip_type !== 'return' || !!p.return_date;
-  const hasMulti = p.trip_type !== 'multicity' || ((p.multi_city_segments?.length ?? 0) >= 2);
-  return hasOrigin && hasDestination && hasDeparture && hasReturn && hasMulti;
-}
-
 export async function POST(request: NextRequest, { params }: Params) {
   try {
     const { conversationId } = params;
     const body = await request.json();
+
+    // Validate request
     const validatedBody = SendMessageRequestSchema.parse(body);
 
-    // Conversation must exist & be active
+    // Check if conversation exists
     const conversation = await db.getConversation(conversationId);
     if (!conversation) {
       return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
     }
+
+    // Check if conversation is still active
     if (conversation.status !== 'active') {
       return NextResponse.json({ error: 'Conversation is no longer active' }, { status: 400 });
     }
@@ -55,31 +48,40 @@ export async function POST(request: NextRequest, { params }: Params) {
       content: validatedBody.message,
     });
 
-    // Get history + current params
+    // Get conversation history and current parameters
     const messages = await db.getMessages(conversationId);
-    const currentParams = await db.getSearchParameters(conversationId);
 
-    // Parse flight info (optional helper)
-    const parsedFlight = await FlightParser.parseFlightQuery(
-      validatedBody.message,
-      {
-        user_location: validatedBody.user_location,
-        previous_searches: messages
-          .filter(m => m.role === 'user')
-          .map(m => m.content)
-          .slice(-3),
-      }
-    );
+    // :lock: BACKSTOP: ensure search_parameters exists for this conversation
+    let searchParams = await db.getSearchParameters(conversationId);
+    if (!searchParams) {
+      searchParams = await db.createSearchParameters({
+        conversation_id: conversationId,
+        trip_type: 'return',
+        adults: 1,
+        children: 0,
+        infants: 0,
+        is_complete: false,
+      });
+    }
 
-    // Generate AI response (with extraction via tools)
+    // Parse flight information from message (call the STATIC method on the class)
+    const parsedFlight = await FlightParser.parseFlightQuery(validatedBody.message, {
+      user_location: validatedBody.user_location,
+      previous_searches: messages
+        .filter((m) => m.role === 'user')
+        .map((m) => m.content)
+        .slice(-3),
+    });
+
+    // Generate AI response
     const aiResponse = await chatEngine.generateResponse(
       validatedBody.message,
       messages,
-      currentParams || undefined,
+      searchParams || undefined,
       { user_location: validatedBody.user_location }
     );
 
-    // Save assistant message
+    // Save AI response
     await db.createMessage({
       conversation_id: conversationId,
       role: 'assistant',
@@ -91,27 +93,31 @@ export async function POST(request: NextRequest, { params }: Params) {
       },
     });
 
-    // Merge + persist parameters if we extracted anything and we have a row to update
-    if (aiResponse.extracted_params && currentParams) {
-      const merged = chatEngine.mergeParameters(aiResponse.extracted_params, currentParams);
-      // Persist merged fields first
+    // Merge + completeness check when we have extracted params
+    if (aiResponse.extracted_params) {
+      const merged = chatEngine.mergeParameters(aiResponse.extracted_params, searchParams);
+
+      // Safe count for optional multi_city_segments (check the currently stored params)
+      const segmentsCount = searchParams?.multi_city_segments?.length ?? 0;
+
+      const isComplete = !!(
+        merged.origin_code &&
+        merged.destination_code &&
+        merged.departure_date &&
+        (merged.trip_type !== 'return' || merged.return_date) &&
+        (merged.trip_type !== 'multicity' || segmentsCount >= 2)
+      );
+
+      merged.is_complete = isComplete;
+
       await db.updateSearchParameters(conversationId, merged);
 
-      // Now re-fetch the authoritative params (includes multi_city_segments joins)
-      const finalParams = await db.getSearchParameters(conversationId);
+      // Generate URL if parameters are complete
       let generatedUrl: string | undefined;
-
-      if (finalParams) {
-        const complete = isParamsComplete(finalParams);
-
-        // Keep the boolean in sync with reality
-        if (finalParams.is_complete !== complete) {
-          await db.updateSearchParameters(conversationId, { is_complete: complete });
-          // refresh after toggle (optional, but safer)
-        }
-
-        if (complete) {
-          generatedUrl = urlGenerator.generateBookingURL(finalParams, {
+      if (isComplete) {
+        const updatedParamsForUrl = await db.getSearchParameters(conversationId);
+        if (updatedParamsForUrl) {
+          generatedUrl = urlGenerator.generateBookingURL(updatedParamsForUrl, {
             utm_source: 'chat',
             utm_medium: 'ai',
             utm_campaign: 'natural_language_search',
@@ -122,51 +128,45 @@ export async function POST(request: NextRequest, { params }: Params) {
             current_step: 'complete',
             status: 'completed',
           });
-        } else if (aiResponse.next_step) {
-          await db.updateConversation(conversationId, {
-            current_step:
-              aiResponse.next_step === 'collecting'
-                ? 'collecting'
-                : aiResponse.next_step === 'confirming'
-                ? 'confirming'
-                : 'complete',
-          });
         }
+      }
 
-        // Respond with refreshed state
-        const updatedConversation = await db.getConversation(conversationId);
-        const refreshedParams = await db.getSearchParameters(conversationId);
-
-        return NextResponse.json({
-          message_id: messages.length + 2,
-          ai_response: aiResponse,
-          parsed_flight: parsedFlight,
-          search_parameters: refreshedParams,
-          generated_url: updatedConversation?.generated_url ?? generatedUrl,
-          conversation_status: updatedConversation?.status,
-          conversation_step: updatedConversation?.current_step,
+      // Update conversation step if still incomplete
+      if (aiResponse.next_step && !isComplete) {
+        await db.updateConversation(conversationId, {
+          current_step:
+            aiResponse.next_step === 'collecting'
+              ? 'collecting'
+              : aiResponse.next_step === 'confirming'
+              ? 'confirming'
+              : 'complete',
         });
       }
     }
 
-    // Fallback response if no params row yet (e.g., first message before params created)
+    // Get updated conversation state
     const updatedConversation = await db.getConversation(conversationId);
-    const refreshedParams = await db.getSearchParameters(conversationId);
+    const updatedParams = await db.getSearchParameters(conversationId);
 
     return NextResponse.json({
-      message_id: messages.length + 2,
+      message_id: messages.length + 2, // User message + AI response
       ai_response: aiResponse,
       parsed_flight: parsedFlight,
-      search_parameters: refreshedParams,
+      search_parameters: updatedParams,
       generated_url: updatedConversation?.generated_url,
       conversation_status: updatedConversation?.status,
       conversation_step: updatedConversation?.current_step,
     });
   } catch (error) {
     console.error('Error sending message:', error);
+
     if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: 'Validation error', details: error.errors }, { status: 400 });
+      return NextResponse.json(
+        { error: 'Validation error', details: error.errors },
+        { status: 400 }
+      );
     }
+
     return NextResponse.json(
       { error: 'Internal server error', message: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
@@ -187,7 +187,7 @@ export async function GET(request: NextRequest, { params }: Params) {
 
     return NextResponse.json({
       conversation_id: conversationId,
-      messages: messages.map(msg => ({
+      messages: messages.map((msg) => ({
         id: msg.id,
         role: msg.role,
         content: msg.content,
