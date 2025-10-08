@@ -1,14 +1,14 @@
 /**
  * Messages API Endpoints
  * POST /api/conversations/:conversationId/messages - Send message
- * GET  /api/conversations/:conversationId/messages - Get message history
+ * GET /api/conversations/:conversationId/messages - Get message history
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { db } from '@/services/database';
-import { chatEngine } from '@/lib/chat-engine';
-import { FlightParser } from '@/lib/flight-parser';
+import { chatEngine } from '@/lib/chat-engine';           // no /index needed
+import { FlightParser } from '@/lib/flight-parser';        // use the class
 import { urlGenerator } from '@/lib/url-generator';
 
 const SendMessageRequestSchema = z.object({
@@ -50,28 +50,19 @@ export async function POST(request: NextRequest, { params }: Params) {
 
     // Get conversation history and current parameters
     const messages = await db.getMessages(conversationId);
-
-    // :lock: BACKSTOP: ensure search_parameters exists for this conversation
-    let searchParams = await db.getSearchParameters(conversationId);
-    if (!searchParams) {
-      searchParams = await db.createSearchParameters({
-        conversation_id: conversationId,
-        trip_type: 'return',
-        adults: 1,
-        children: 0,
-        infants: 0,
-        is_complete: false,
-      });
-    }
+    const searchParams = await db.getSearchParameters(conversationId);
 
     // Parse flight information from message (call the STATIC method on the class)
-    const parsedFlight = await FlightParser.parseFlightQuery(validatedBody.message, {
-      user_location: validatedBody.user_location,
-      previous_searches: messages
-        .filter((m) => m.role === 'user')
-        .map((m) => m.content)
-        .slice(-3),
-    });
+    const parsedFlight = await FlightParser.parseFlightQuery(
+      validatedBody.message,
+      {
+        user_location: validatedBody.user_location,
+        previous_searches: messages
+          .filter(m => m.role === 'user')
+          .map(m => m.content)
+          .slice(-3),
+      }
+    );
 
     // Generate AI response
     const aiResponse = await chatEngine.generateResponse(
@@ -93,11 +84,11 @@ export async function POST(request: NextRequest, { params }: Params) {
       },
     });
 
-    // Merge + completeness check when we have extracted params
-    if (aiResponse.extracted_params) {
+    // Update search parameters if extracted
+    if (aiResponse.extracted_params && searchParams) {
       const merged = chatEngine.mergeParameters(aiResponse.extracted_params, searchParams);
 
-      // Safe count for optional multi_city_segments (check the currently stored params)
+      // :white_check_mark: SAFE count for optional multi_city_segments
       const segmentsCount = searchParams?.multi_city_segments?.length ?? 0;
 
       const isComplete = !!(
@@ -113,7 +104,7 @@ export async function POST(request: NextRequest, { params }: Params) {
       await db.updateSearchParameters(conversationId, merged);
 
       // Generate URL if parameters are complete
-      let generatedUrl: string | undefined;
+      let generatedUrl;
       if (isComplete) {
         const updatedParamsForUrl = await db.getSearchParameters(conversationId);
         if (updatedParamsForUrl) {
@@ -131,7 +122,7 @@ export async function POST(request: NextRequest, { params }: Params) {
         }
       }
 
-      // Update conversation step if still incomplete
+      // Update conversation step
       if (aiResponse.next_step && !isComplete) {
         await db.updateConversation(conversationId, {
           current_step:
@@ -187,7 +178,7 @@ export async function GET(request: NextRequest, { params }: Params) {
 
     return NextResponse.json({
       conversation_id: conversationId,
-      messages: messages.map((msg) => ({
+      messages: messages.map(msg => ({
         id: msg.id,
         role: msg.role,
         content: msg.content,
