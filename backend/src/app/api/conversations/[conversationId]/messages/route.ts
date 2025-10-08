@@ -7,9 +7,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { db } from '@/services/database';
-import { chatEngine } from '@/lib/chat-engine';           // no /index needed
-import { FlightParser } from '@/lib/flight-parser';        // use the class
+import { chatEngine } from '@/lib/chat-engine';
+import { FlightParser } from '@/lib/flight-parser';
 import { urlGenerator } from '@/lib/url-generator';
+import type { SearchParameters } from '@/models/search-parameters';
 
 const SendMessageRequestSchema = z.object({
   message: z.string().min(1, 'Message cannot be empty'),
@@ -22,21 +23,27 @@ interface Params {
   };
 }
 
+// Single source of truth for "complete"
+function isParamsComplete(p: SearchParameters): boolean {
+  const hasOrigin = !!p.origin_code;
+  const hasDestination = !!p.destination_code;
+  const hasDeparture = !!p.departure_date;
+  const hasReturn = p.trip_type !== 'return' || !!p.return_date;
+  const hasMulti = p.trip_type !== 'multicity' || ((p.multi_city_segments?.length ?? 0) >= 2);
+  return hasOrigin && hasDestination && hasDeparture && hasReturn && hasMulti;
+}
+
 export async function POST(request: NextRequest, { params }: Params) {
   try {
     const { conversationId } = params;
     const body = await request.json();
-
-    // Validate request
     const validatedBody = SendMessageRequestSchema.parse(body);
 
-    // Check if conversation exists
+    // Conversation must exist & be active
     const conversation = await db.getConversation(conversationId);
     if (!conversation) {
       return NextResponse.json({ error: 'Conversation not found' }, { status: 404 });
     }
-
-    // Check if conversation is still active
     if (conversation.status !== 'active') {
       return NextResponse.json({ error: 'Conversation is no longer active' }, { status: 400 });
     }
@@ -48,11 +55,11 @@ export async function POST(request: NextRequest, { params }: Params) {
       content: validatedBody.message,
     });
 
-    // Get conversation history and current parameters
+    // Get history + current params
     const messages = await db.getMessages(conversationId);
-    const searchParams = await db.getSearchParameters(conversationId);
+    const currentParams = await db.getSearchParameters(conversationId);
 
-    // Parse flight information from message (call the STATIC method on the class)
+    // Parse flight info (optional helper)
     const parsedFlight = await FlightParser.parseFlightQuery(
       validatedBody.message,
       {
@@ -64,15 +71,15 @@ export async function POST(request: NextRequest, { params }: Params) {
       }
     );
 
-    // Generate AI response
+    // Generate AI response (with extraction via tools)
     const aiResponse = await chatEngine.generateResponse(
       validatedBody.message,
       messages,
-      searchParams || undefined,
+      currentParams || undefined,
       { user_location: validatedBody.user_location }
     );
 
-    // Save AI response
+    // Save assistant message
     await db.createMessage({
       conversation_id: conversationId,
       role: 'assistant',
@@ -84,31 +91,27 @@ export async function POST(request: NextRequest, { params }: Params) {
       },
     });
 
-    // Update search parameters if extracted
-    if (aiResponse.extracted_params && searchParams) {
-      const merged = chatEngine.mergeParameters(aiResponse.extracted_params, searchParams);
-
-      // :white_check_mark: SAFE count for optional multi_city_segments
-      const segmentsCount = searchParams?.multi_city_segments?.length ?? 0;
-
-      const isComplete = !!(
-        merged.origin_code &&
-        merged.destination_code &&
-        merged.departure_date &&
-        (merged.trip_type !== 'return' || merged.return_date) &&
-        (merged.trip_type !== 'multicity' || segmentsCount >= 2)
-      );
-
-      merged.is_complete = isComplete;
-
+    // Merge + persist parameters if we extracted anything and we have a row to update
+    if (aiResponse.extracted_params && currentParams) {
+      const merged = chatEngine.mergeParameters(aiResponse.extracted_params, currentParams);
+      // Persist merged fields first
       await db.updateSearchParameters(conversationId, merged);
 
-      // Generate URL if parameters are complete
-      let generatedUrl;
-      if (isComplete) {
-        const updatedParamsForUrl = await db.getSearchParameters(conversationId);
-        if (updatedParamsForUrl) {
-          generatedUrl = urlGenerator.generateBookingURL(updatedParamsForUrl, {
+      // Now re-fetch the authoritative params (includes multi_city_segments joins)
+      const finalParams = await db.getSearchParameters(conversationId);
+      let generatedUrl: string | undefined;
+
+      if (finalParams) {
+        const complete = isParamsComplete(finalParams);
+
+        // Keep the boolean in sync with reality
+        if (finalParams.is_complete !== complete) {
+          await db.updateSearchParameters(conversationId, { is_complete: complete });
+          // refresh after toggle (optional, but safer)
+        }
+
+        if (complete) {
+          generatedUrl = urlGenerator.generateBookingURL(finalParams, {
             utm_source: 'chat',
             utm_medium: 'ai',
             utm_campaign: 'natural_language_search',
@@ -119,45 +122,51 @@ export async function POST(request: NextRequest, { params }: Params) {
             current_step: 'complete',
             status: 'completed',
           });
+        } else if (aiResponse.next_step) {
+          await db.updateConversation(conversationId, {
+            current_step:
+              aiResponse.next_step === 'collecting'
+                ? 'collecting'
+                : aiResponse.next_step === 'confirming'
+                ? 'confirming'
+                : 'complete',
+          });
         }
-      }
 
-      // Update conversation step
-      if (aiResponse.next_step && !isComplete) {
-        await db.updateConversation(conversationId, {
-          current_step:
-            aiResponse.next_step === 'collecting'
-              ? 'collecting'
-              : aiResponse.next_step === 'confirming'
-              ? 'confirming'
-              : 'complete',
+        // Respond with refreshed state
+        const updatedConversation = await db.getConversation(conversationId);
+        const refreshedParams = await db.getSearchParameters(conversationId);
+
+        return NextResponse.json({
+          message_id: messages.length + 2,
+          ai_response: aiResponse,
+          parsed_flight: parsedFlight,
+          search_parameters: refreshedParams,
+          generated_url: updatedConversation?.generated_url ?? generatedUrl,
+          conversation_status: updatedConversation?.status,
+          conversation_step: updatedConversation?.current_step,
         });
       }
     }
 
-    // Get updated conversation state
+    // Fallback response if no params row yet (e.g., first message before params created)
     const updatedConversation = await db.getConversation(conversationId);
-    const updatedParams = await db.getSearchParameters(conversationId);
+    const refreshedParams = await db.getSearchParameters(conversationId);
 
     return NextResponse.json({
-      message_id: messages.length + 2, // User message + AI response
+      message_id: messages.length + 2,
       ai_response: aiResponse,
       parsed_flight: parsedFlight,
-      search_parameters: updatedParams,
+      search_parameters: refreshedParams,
       generated_url: updatedConversation?.generated_url,
       conversation_status: updatedConversation?.status,
       conversation_step: updatedConversation?.current_step,
     });
   } catch (error) {
     console.error('Error sending message:', error);
-
     if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Validation error', details: error.errors },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Validation error', details: error.errors }, { status: 400 });
     }
-
     return NextResponse.json(
       { error: 'Internal server error', message: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
