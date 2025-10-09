@@ -99,26 +99,6 @@ export default function MessageInput({
 
         {/* Action buttons */}
         <div className="flex items-center space-x-1">
-          {/* Voice input (placeholder) */}
-          <button
-            type="button"
-            disabled={isLoading}
-            className="p-2.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            title="Voice input (coming soon)"
-          >
-            <Mic className="w-5 h-5" />
-          </button>
-
-          {/* Attachment (placeholder) */}
-          <button
-            type="button"
-            disabled={isLoading}
-            className="p-2.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            title="Attach file (coming soon)"
-          >
-            <Paperclip className="w-5 h-5" />
-          </button>
-
           {/* Send button */}
           <button
             onClick={handleSubmit}
