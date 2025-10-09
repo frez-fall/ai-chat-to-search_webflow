@@ -75,7 +75,7 @@ export default function MessageInput({
     <div className="space-y-3">
 
       {/* Input container */}
-      <div className="relative flex items-end space-x-2">
+      <div className="relative flex items-center space-x-2">
         <div className="flex-1 relative">
           <textarea
             ref={textareaRef}
