@@ -15,7 +15,7 @@ export interface URLConfig {
 }
 
 const DEFAULT_CONFIG: URLConfig = {
-  baseUrl:'https://app.paylatertravel.com.au',
+  baseUrl: 'https://app.paylatertravel.com.au',
   defaultCurrency: 'AUD',
   defaultMarket: 'AU',
 };
@@ -82,27 +82,22 @@ export class URLGenerator {
 
   // Generate return trip URL
   private generateReturnURL(params: SearchParameters, options?: any): string {
-    const baseUrl = `${this.config.baseUrl}/flights`;
+    // Format: https://app.paylatertravel.com.au/flightssearch/s/{origin}/{destination}/{departure}/{return}
+    const origin = params.origin_code || '';
+    const destination = params.destination_code || '';
+    const departure = params.departure_date || '';
+    const returnDate = params.return_date || '';
+    
+    const baseUrl = `${this.config.baseUrl}/flightssearch/s/${origin}/${destination}/${departure}/${returnDate}`;
     const urlParams = new URLSearchParams();
-
-    // Required parameters
-    urlParams.append('from', params.origin_code || '');
-    urlParams.append('to', params.destination_code || '');
-    urlParams.append('depart', this.formatDate(params.departure_date || ''));
-    urlParams.append('return', this.formatDate(params.return_date || ''));
-    urlParams.append('type', 'R'); // Return trip
     
     // Passenger counts
     urlParams.append('adults', String(params.adults || 1));
-    if (params.children && params.children > 0) {
-      urlParams.append('children', String(params.children));
-    }
-    if (params.infants && params.infants > 0) {
-      urlParams.append('infants', String(params.infants));
-    }
+    urlParams.append('children', String(params.children || 0));
+    urlParams.append('infants', String(params.infants || 0));
     
     // Cabin class
-    urlParams.append('class', params.cabin_class || 'Y');
+    urlParams.append('cabinClass', params.cabin_class || 'Y');
     
     // Optional parameters
     this.appendOptionalParams(urlParams, options);
@@ -112,26 +107,21 @@ export class URLGenerator {
 
   // Generate one-way trip URL
   private generateOneWayURL(params: SearchParameters, options?: any): string {
-    const baseUrl = `${this.config.baseUrl}/flights`;
+    // Format: https://app.paylatertravel.com.au/flightssearch/s/{origin}/{destination}/{departure}
+    const origin = params.origin_code || '';
+    const destination = params.destination_code || '';
+    const departure = params.departure_date || '';
+    
+    const baseUrl = `${this.config.baseUrl}/flightssearch/s/${origin}/${destination}/${departure}`;
     const urlParams = new URLSearchParams();
-
-    // Required parameters
-    urlParams.append('from', params.origin_code || '');
-    urlParams.append('to', params.destination_code || '');
-    urlParams.append('depart', this.formatDate(params.departure_date || ''));
-    urlParams.append('type', 'O'); // One-way trip
     
     // Passenger counts
     urlParams.append('adults', String(params.adults || 1));
-    if (params.children && params.children > 0) {
-      urlParams.append('children', String(params.children));
-    }
-    if (params.infants && params.infants > 0) {
-      urlParams.append('infants', String(params.infants));
-    }
+    urlParams.append('children', String(params.children || 0));
+    urlParams.append('infants', String(params.infants || 0));
     
     // Cabin class
-    urlParams.append('class', params.cabin_class || 'Y');
+    urlParams.append('cabinClass', params.cabin_class || 'Y');
     
     // Optional parameters
     this.appendOptionalParams(urlParams, options);
@@ -141,7 +131,9 @@ export class URLGenerator {
 
   // Generate multi-city trip URL
   private generateMultiCityURL(params: SearchParameters, options?: any): string {
-    const baseUrl = `${this.config.baseUrl}/flights/multi-city`;
+    // For multi-city, we need a different format
+    // Format: https://app.paylatertravel.com.au/flightssearch/multi
+    const baseUrl = `${this.config.baseUrl}/flightssearch/multi`;
     const urlParams = new URLSearchParams();
 
     // Check for multi-city segments
@@ -159,7 +151,7 @@ export class URLGenerator {
       const segmentNum = index + 1;
       urlParams.append(`from${segmentNum}`, segment.origin_code);
       urlParams.append(`to${segmentNum}`, segment.destination_code);
-      urlParams.append(`date${segmentNum}`, this.formatDate(segment.departure_date));
+      urlParams.append(`date${segmentNum}`, segment.departure_date);
     });
 
     // Trip type
@@ -168,15 +160,11 @@ export class URLGenerator {
     
     // Passenger counts
     urlParams.append('adults', String(params.adults || 1));
-    if (params.children && params.children > 0) {
-      urlParams.append('children', String(params.children));
-    }
-    if (params.infants && params.infants > 0) {
-      urlParams.append('infants', String(params.infants));
-    }
+    urlParams.append('children', String(params.children || 0));
+    urlParams.append('infants', String(params.infants || 0));
     
     // Cabin class
-    urlParams.append('class', params.cabin_class || 'Y');
+    urlParams.append('cabinClass', params.cabin_class || 'Y');
     
     // Optional parameters
     this.appendOptionalParams(urlParams, options);
@@ -296,14 +284,6 @@ export class URLGenerator {
 
   // Append optional parameters
   private appendOptionalParams(urlParams: URLSearchParams, options?: any): void {
-    // Add currency and market
-    if (this.config.defaultCurrency) {
-      urlParams.append('currency', this.config.defaultCurrency);
-    }
-    if (this.config.defaultMarket) {
-      urlParams.append('market', this.config.defaultMarket);
-    }
-    
     // Add affiliate ID if configured
     if (this.config.affiliateId) {
       urlParams.append('aid', this.config.affiliateId);
