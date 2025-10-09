@@ -15,7 +15,7 @@ export interface URLConfig {
 }
 
 const DEFAULT_CONFIG: URLConfig = {
-  baseUrl: 'https://www.paylaterflights.com',
+  baseUrl:'https://app.paylatertravel.com.au',
   defaultCurrency: 'USD',
   defaultMarket: 'US',
 };
