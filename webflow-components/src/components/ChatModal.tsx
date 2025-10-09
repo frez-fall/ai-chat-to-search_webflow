@@ -238,13 +238,13 @@ export default function ChatModal({
           {
             id: `success-${Date.now()}`,
             role: 'system',
-            content: `:airplane: Perfect! I've found flights for you:\n\n:round_pushpin: ${
+            content: `✈️ Perfect! I've found flights for you:\n\n📍: ${
               response.search_parameters?.origin_name ||
               response.search_parameters?.origin_code
             } → ${
               response.search_parameters?.destination_name ||
               response.search_parameters?.destination_code
-            }\n:busts_in_silhouette: ${passengerSummary}\n:date: ${response.search_parameters?.departure_date}${
+            }\n👥${passengerSummary}\n📅 ${response.search_parameters?.departure_date}${
               response.search_parameters?.return_date
                 ? ` - ${response.search_parameters?.return_date}`
                 : ' (One-way)'
