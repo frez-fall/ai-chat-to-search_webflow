@@ -5,6 +5,7 @@ This project is a production-ready AI-powered flight search chat integrated into
 ## Repository Structure
 
 ai-chat-to-search_webflow/
+```bash
 ├─ backend/ – Next.js API backend (deploy target)
 │ ├─ src/
 │ │ ├─ app/api/...                  – API route handlers (conversations, messages, chat/stream, etc.)
@@ -25,29 +26,29 @@ ai-chat-to-search_webflow/
 │ └─ tailwind.out.css               – Precompiled Tailwind utilities
 ├─ package.json
 └─ webflow.config.ts                – Webflow CLI config for build/publish
-
+```
 ## Overview
 
 Users can search for flights conversationally using AI directly on a Webflow page. The backend handles AI intent parsing, flight parameter extraction, conversation persistence, and booking link generation. The frontend (Webflow component) handles UI, modal logic, and API communication.
 
 ### Backend Configuration (Next.js + Vercel)
 
-Framework preset: Next.js
-Root directory: /backend
-Install command: npm ci (clean install using package-lock.json)
-Build command: next build
-Output directory: Default (Next.js)
-Node version: 18+
+- Framework preset: Next.js
+- Root directory: /backend
+- Install command: npm ci (clean install using package-lock.json)
+- Build command: next build
+- Output directory: Default (Next.js)
+- Node version: 18+
 
 ### Required Environment Variables
 
 Set the following keys in Vercel → Settings → Environment Variables:
 
-CORS_ALLOWED_ORIGINS=https://paylatertravel-au.webflow.io,https://www.yourdomain.com
-OPENAI_API_KEY=sk-...
-SUPABASE_URL=https://xxxx.supabase.co
-SUPABASE_ANON_KEY=...
-SUPABASE_SERVICE_KEY=...
+- CORS_ALLOWED_ORIGINS=https://paylatertravel-au.webflow.io,https://www.yourdomain.com
+- OPENAI_API_KEY=sk-...
+- SUPABASE_URL=https://xxxx.supabase.co
+- SUPABASE_ANON_KEY=...
+- SUPABASE_SERVICE_KEY=...
 
 These environment variables are required for the backend to function. The service key should only be used server-side, while the anon key is optional for client-safe reads.
 
@@ -76,12 +77,12 @@ This middleware automatically reads allowed origins from the environment variabl
 
 ### API Routes
 
-/api/health – GET – health check
-/api/conversations – POST – create conversation
-/api/conversations/[id]/messages – POST – send message and get AI reply
-/api/conversations/[id]/parameters – GET/PUT – get or update flight search parameters
-/api/chat/stream – POST – stream AI responses (optional)
-/api/destinations – GET – destination recommendations
+- /api/health – GET – health check
+- /api/conversations – POST – create conversation
+- /api/conversations/[id]/messages – POST – send message and get AI reply
+- /api/conversations/[id]/parameters – GET/PUT – get or update flight search parameters
+- /api/chat/stream – POST – stream AI responses (optional)
+- /api/destinations – GET – destination recommendations
 
 ### Webflow Component Setup
 
@@ -129,24 +130,24 @@ apiBaseUrl (string) – Required. The base URL of your backend (e.g. https://you
 
 ### For local development
 **Example .env.local**
-OPENAI_API_KEY=sk-...
-SUPABASE_URL=https://xxxx.supabase.co
-
-SUPABASE_ANON_KEY=...
-SUPABASE_SERVICE_KEY=...
-CORS_ALLOWED_ORIGINS=http://localhost:3000,https://paylatertravel-au.webflow.io,https://paylatertravel.com
+- OPENAI_API_KEY=sk-...
+- SUPABASE_URL=https://xxxx.supabase.co
+- SUPABASE_ANON_KEY=...
+- SUPABASE_SERVICE_KEY=...
+- CORS_ALLOWED_ORIGINS=http://localhost:3000,https://paylatertravel-au.webflow.io,https://paylatertravel.com
 
 **Running Locally**
 Backend: 
-cd backend
-npm install
-npm run dev
+- cd backend
+- npm install
+- npm run dev
+
 The backend will be available at http://localhost:3000
 
 Webflow Component:
-cd webflow-components
-npm install
-npx webflow build
+- cd webflow-components
+- npm install
+- npx webflow build
 
 You can then link the component to a test Webflow project or a local HTML sandbox with the apiBaseUrl set to http://localhost:3000 for testing.
 
