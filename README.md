@@ -1,149 +1,185 @@
-# AI-Powered Flight Search System
+# AI Chat → Flight Search (Webflow + Vercel)
 
-Natural language flight search using OpenAI to improve homepage conversion from 42%.
+This project is a production-ready AI-powered flight search chat integrated into a Webflow Code Component (frontend) with a Next.js (App Router) backend deployed on Vercel, and powered by Supabase and OpenAI.
 
-## 🚀 Quick Start
+## Repository Structure
 
-### Prerequisites
-- Node.js 18+
-- OpenAI API Key
-- Supabase Account
+ai-chat-to-search_webflow/
+├─ backend/ – Next.js API backend (deploy target)
+│ ├─ src/
+│ │ ├─ app/api/...                  – API route handlers (conversations, messages, chat/stream, etc.)
+│ │ ├─ lib/...                      – Chat engine, flight-parser, URL generator
+│ │ ├─ models/...                   – Zod schemas for validation & types
+│ │ └─ middleware.ts                – Handles CORS dynamically via env var
+│ ├─ package.json
+│ ├─ tsconfig.json
+│ └─ next.config.js
+└─ webflow-components/              – Webflow Code Component frontend
+├─ src/
+│ ├─ ChatWidget.webflow.tsx         – Webflow wrapper – exposes apiBaseUrl
+│ ├─ ChatWidget.tsx                 – Mounts QuickSearch + ChatModal
+│ ├─ components/...                 – ChatModal, MessageList, MessageInput etc.
+│ ├─ hooks/...                      – useChat, useLockBodyScroll, etc.
+│ └─ styles/
+│ ├─ tokens.css                     – Design tokens (CSS vars)
+│ └─ tailwind.out.css               – Precompiled Tailwind utilities
+├─ package.json
+└─ webflow.config.ts                – Webflow CLI config for build/publish
 
-### Setup
+## Overview
 
-1. **Run the setup script:**
-```bash
-./setup.sh
-```
+Users can search for flights conversationally using AI directly on a Webflow page. The backend handles AI intent parsing, flight parameter extraction, conversation persistence, and booking link generation. The frontend (Webflow component) handles UI, modal logic, and API communication.
 
-2. **Configure API Keys:**
+### Backend Configuration (Next.js + Vercel)
 
-Edit `backend/.env`:
-```env
-OPENAI_API_KEY=sk-...your-key-here
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_ANON_KEY=your-anon-key
-SUPABASE_SERVICE_KEY=your-service-key
-```
+Framework preset: Next.js
+Root directory: /backend
+Install command: npm ci (clean install using package-lock.json)
+Build command: next build
+Output directory: Default (Next.js)
+Node version: 18+
 
-Edit `frontend/.env.local`:
-```env
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
-```
+### Required Environment Variables
 
-3. **Set up Database:**
+Set the following keys in Vercel → Settings → Environment Variables:
 
-In your Supabase SQL editor, run:
-- `backend/supabase/migrations/001_initial_schema.sql`
-- `backend/supabase/seeds/destination_recommendations.sql`
+CORS_ALLOWED_ORIGINS=https://paylatertravel-au.webflow.io,https://www.yourdomain.com
+OPENAI_API_KEY=sk-...
+SUPABASE_URL=https://xxxx.supabase.co
+SUPABASE_ANON_KEY=...
+SUPABASE_SERVICE_KEY=...
 
-4. **Start the Application:**
+These environment variables are required for the backend to function. The service key should only be used server-side, while the anon key is optional for client-safe reads.
 
-Backend (Terminal 1):
-```bash
+### CORS Handling (middleware.ts)
+
+All CORS logic is handled dynamically in backend/src/middleware.ts, which runs before every API route.
+
+**How it works**
+Reads the environment variable CORS_ALLOWED_ORIGINS (comma-separated list of allowed domains).
+
+CORS_ALLOWED_ORIGINS=https://paylatertravel-au.webflow.io,https://www.paylatertravel.com
+
+**For every API request:**
+- Checks the request's Origin header.
+- If the origin matches one of the allowed domains, it sets Access-Control-Allow-Origin to that value.
+- Responds automatically to OPTIONS (preflight) requests with 200 OK.
+- Applies to all routes under /api/*.
+
+**Benefits of this approach:**
+- Dynamic — you can add or remove domains from CORS without redeploying code.
+- Secure — only approved origins can access your backend.
+- Simple — no need for a vercel.json config file.
+- Vercel-native — the middleware runs at the edge before your API logic executes.
+
+This middleware automatically reads allowed origins from the environment variable CORS_ALLOWED_ORIGINS, responds to preflight OPTIONS requests, and sets Access-Control-Allow-Origin only for whitelisted domains.
+
+### API Routes
+
+/api/health – GET – health check
+/api/conversations – POST – create conversation
+/api/conversations/[id]/messages – POST – send message and get AI reply
+/api/conversations/[id]/parameters – GET/PUT – get or update flight search parameters
+/api/chat/stream – POST – stream AI responses (optional)
+/api/destinations – GET – destination recommendations
+
+### Webflow Component Setup
+
+The Webflow component is located in webflow-components/. It is a self-contained chat widget built in React and compiled for Webflow's Code Component system.
+
+**Key files**
+
+- ChatWidget.webflow.tsx – declares the component for Webflow with an apiBaseUrl prop
+- ChatWidget.tsx – mounts QuickSearchWidget and ChatModal
+- ChatModal.tsx – manages AI conversation and modal UI
+- MessageList.tsx – handles chat bubble display and extracted info logic
+- tokens.css – contains CSS design tokens for brand consistency
+
+**Prop Configuration**
+
+apiBaseUrl (string) – Required. The base URL of your backend (e.g. https://your-backend.vercel.app)
+
+**Build commands** 
+
+- cd webflow-components
+- npm install
+- npx webflow build
+- npx webflow library share
+
+**How to add to page** 
+
+1. Add in Webflow Designer
+2. Open Webflow Designer and go to Components → Code Components
+3. Drag PayLater Chat Widget onto your page
+4. In Component Settings, set the prop:
+5. API Base URL = https://your-backend.vercel.app
+6. Publish your Webflow site
+7. When published, the component connects to your backend automatically and powers the live chat assistant.
+
+### Conversation Flow
+
+- Suggestions in QuickSearch only fill the search box
+- Clicking "Let's go" opens the modal and auto-sends the query
+- The modal locks background scroll and connects to the backend
+- Chat messages display one by one as the AI responds
+- Extracted Information is shown only once all flight parameters are complete
+- Once booking details are complete, a "View & Book Flights" button appears linking to the generated booking URL
+- Session data persists locally, allowing the user to reopen the modal and continue within a limited time window
+
+
+### For local development
+**Example .env.local**
+OPENAI_API_KEY=sk-...
+SUPABASE_URL=https://xxxx.supabase.co
+
+SUPABASE_ANON_KEY=...
+SUPABASE_SERVICE_KEY=...
+CORS_ALLOWED_ORIGINS=http://localhost:3000,https://paylatertravel-au.webflow.io,https://paylatertravel.com
+
+**Running Locally**
+Backend: 
 cd backend
+npm install
 npm run dev
-# Runs on http://localhost:3001
-```
+The backend will be available at http://localhost:3000
 
-Frontend (Terminal 2):
-```bash
-cd frontend
-npm run dev
-# Runs on http://localhost:3000
-```
+Webflow Component:
+cd webflow-components
+npm install
+npx webflow build
 
-## 🔑 Getting API Keys
+You can then link the component to a test Webflow project or a local HTML sandbox with the apiBaseUrl set to http://localhost:3000 for testing.
 
-### OpenAI
-1. Go to https://platform.openai.com/api-keys
-2. Create a new API key
-3. Add to `backend/.env`
+### Troubleshooting
 
-### Supabase
-1. Create account at https://supabase.com
-2. Create a new project
-3. Go to Settings > API
-4. Copy:
-   - Project URL → `SUPABASE_URL`
-   - Anon/Public key → `SUPABASE_ANON_KEY`
-   - Service Role key → `SUPABASE_SERVICE_KEY`
+- 401 Unauthorized – Vercel Preview Protection is enabled → Disable protection or use a bypass token
+- 403 CORS – Origin not in allowlist → Add your Webflow staging and production domains to CORS_ALLOWED_ORIGINS
+- 500 Internal Server Error – Missing or incorrect env variables → Verify Supabase and OpenAI keys
+- Broken styling in Webflow – Global CSS bleeding → Ensure applyTagSelectors: false in ChatWidget.webflow.tsx
+- Chat opens on suggestion click – Fixed: only "Let's go" triggers the modal
+- Extracted information always showing – Fixed: now gated by completion logic
+- Button not showing – Appears once backend returns generated_url
 
-## 📝 Features
+### Security Best Practices
 
-- **Natural Language Search**: "Flights to Tokyo next month for 2 people"
-- **AI-Powered IATA Resolution**: Converts city names to airport codes
-- **Smart Date Validation**: Ensures 14+ days ahead for Paylater
-- **Multi-City Support**: Complex itineraries with multiple stops
-- **Real-time Chat**: Streaming responses for better UX
-- **Destination Recommendations**: Categorized travel suggestions
+- Never commit any keys. Store them in Vercel's Environment Variables.
+- Limit CORS_ALLOWED_ORIGINS to your actual Webflow domains.
+- Use SUPABASE_SERVICE_KEY only on the backend; use SUPABASE_ANON_KEY for any client reads.
+- Validate and sanitize all API requests before forwarding to OpenAI.
 
-## 🧪 Testing
+### Maintenance
 
-Test the health endpoint:
-```bash
-curl http://localhost:3001/api/health
-```
+- Keep your color and brand updates in webflow-components/src/styles/tokens.css
+- Use npm ci instead of npm install to ensure consistent dependency versions during builds.
+- Test /api/health regularly to confirm deployment health.
+- Monitor error logs in Vercel → Logs.
+- Update Webflow components by rebuilding and republishing via the CLI when new UI changes are made.
 
-Test a conversation:
-```bash
-curl -X POST http://localhost:3001/api/conversations \
-  -H "Content-Type: application/json" \
-  -d '{"initial_query": "Flights from NYC to Tokyo in April"}'
-```
+### Deployment Checklist
 
-## 📚 Documentation
-
-- [Quickstart Guide](specs/001-scoping-this-feature/quickstart.md)
-- [API Documentation](specs/001-scoping-this-feature/contracts/openapi.yaml)
-- [Development Guide](specs/001-scoping-this-feature/CLAUDE.md)
-
-## 🛠 Tech Stack
-
-- **Frontend**: Next.js 15, React 19, TypeScript, Tailwind CSS
-- **Backend**: Next.js API Routes, TypeScript
-- **AI**: OpenAI GPT-4, AI SDK v5
-- **Database**: Supabase (PostgreSQL)
-- **Validation**: Zod 
-
-## 📁 Project Structure
-
-```
-ai-chat-to-search/
-├── frontend/          # Next.js frontend
-│   ├── src/
-│   │   ├── components/  # React components
-│   │   ├── hooks/       # Custom hooks
-│   │   └── types/       # TypeScript types
-├── backend/           # Next.js backend
-│   ├── src/
-│   │   ├── app/api/     # API routes
-│   │   ├── lib/         # Core libraries
-│   │   ├── models/      # Data models
-│   │   └── services/    # Services
-│   └── supabase/       # Database files
-└── specs/             # Specifications
-```
-
-## 🚨 Troubleshooting
-
-### "API key not configured"
-- Check your `.env` files have actual keys, not placeholder values
-- Restart the development servers after adding keys
-
-### "Database connection failed"
-- Verify Supabase project is active
-- Check credentials match your project
-- Ensure migrations have been run
-
-### "CORS errors"
-- Frontend should use `http://localhost:3001/api`
-- Check `NEXT_PUBLIC_API_URL` in frontend `.env.local`
-
-## 🤝 Support
-
-For issues or questions:
-- Check the [Quickstart Guide](specs/001-scoping-this-feature/quickstart.md)
-- Review the [Development Guide](specs/001-scoping-this-feature/CLAUDE.md)
-- Verify all API keys are correctly configured
+- Set environment variables in Vercel
+- Deploy backend (root: /backend)
+- Build & publish Webflow component
+- Add the widget in Webflow Designer
+- Set API Base URL to production backend
+- Publish and test
