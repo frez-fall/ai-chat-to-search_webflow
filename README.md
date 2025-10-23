@@ -113,9 +113,9 @@ apiBaseUrl (string) – Required. The base URL of your backend (e.g. https://you
 2. Open Webflow Designer and go to Components → Code Components
 3. Drag PayLater Chat Widget onto your page
 4. In Component Settings, set the prop:
-5. API Base URL = https://your-backend.vercel.app
-6. Publish your Webflow site
-7. When published, the component connects to your backend automatically and powers the live chat assistant.
+   API Base URL = https://your-backend.vercel.app
+5. Publish your Webflow site
+6. When published, the component connects to your backend automatically and powers the live chat assistant.
 
 ### Conversation Flow
 
